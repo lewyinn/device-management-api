@@ -1,8 +1,9 @@
-# Smart Device Registry API Documentation
+# Management Device API Documentation
 
 ## 1. Overview
 
 API untuk registrasi dan manajemen perangkat IoT beserta pencatatan data telemetry (temperature & humidity). Mendukung operasi CRUD untuk Device dan Telemetry dengan format timestamp ala ThingsBoard.
+Menggunakan Beberapa language yaitu Java Spring Boot & Node.js Express & Python FastAPI
 
 ---
 
@@ -12,8 +13,7 @@ API untuk registrasi dan manajemen perangkat IoT beserta pencatatan data telemet
 |---                |---|
 | Base URL          | `/api/v1` |
 | Content-Type      | `application/json` |
-| Authentication    | Tidak diperlukan |
-| Swagger UI        | `http://localhost:3000/api-docs` |
+| Swagger UI        | `/api-docs` |
 | Database          | SQLite (in-memory) |
 
 ---
