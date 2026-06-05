@@ -17,7 +17,13 @@ http://localhost:8080
 Swagger:
 
 ```text
-http://localhost:8080/api-docs
+http://localhost:8080/swagger-ui/index.html
+```
+
+OpenAPI JSON:
+
+```text
+http://localhost:8080/openapi.json
 ```
 
 ## Database
