@@ -1,0 +1,311 @@
+{
+  "info": {
+    "_postman_id": "bfc80db4-12e2-4c21-b91f-9a098ea15dec",
+    "name": "Python Port 8000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "31703783"
+  },
+  "item": [
+    {
+      "name": "Device",
+      "item": [
+        {
+          "name": "POST - Send Device Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sensor-Suhu\",\n  \"type\": \"DHT22\",\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('device_id', body.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET - Collect All Data Device with pagination",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Collect Data by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT - Update Data with all field",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sensor-Baru\",\n  \"type\": \"DHT22\",\n  \"status\": \"inactive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH - Update data with field by body",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "### Deskripsi\n\nREST API sederhana untuk mengelola device IoT dan telemetry.\n\nBase URL:\n\nhttp://localhost:8000/api/v1\n\nTidak perlu token atau API key.\n\n### Endpoint utama\n\n| Method | Endpoint | Deskripsi |\n| --- | --- | --- |\n| POST | /devices | Membuat device baru. |\n| GET | /devices?page=1&limit=10 | Mengambil daftar device dengan pagination. |\n| GET | /devices/{device_id} | Mengambil detail device berdasarkan UUID. |\n| PUT | /devices/{device_id} | Update semua field device. |\n| PATCH | /devices/{device_id} | Update sebagian field device. |\n| DELETE | /devices/{device_id} | Menghapus device. |\n| POST | /devices/{device_id}/telemetry | Membuat telemetry untuk device. |\n| GET | /devices/{device_id}/telemetry | Mengambil telemetry device. |\n| GET | /devices/{device_id}/telemetry/latest | Mengambil telemetry terbaru. |\n| DELETE | /telemetry/{telemetry_id} | Menghapus telemetry. |\n\nCatatan:\n\n- device_id memakai UUID.\n- Database default SQLite in-memory, jadi data hilang saat server restart."
+    },
+    {
+      "name": "DeviceTelemetry",
+      "item": [
+        {
+          "name": "POST - Create Telemetry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"values\": {\n    \"temperature\": 28.5,\n    \"humidity\": 75.2\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET - Read All Telemetry by Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}/telemetry",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Read LatestTelemetry by Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}/telemetry/latest",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}",
+                "telemetry",
+                "latest"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE - Delete Telemetry by ID",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/telemetry/{{telemetry_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemetry",
+                "{{telemetry_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE - Delete data by ID",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/devices/{{device_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "devices",
+                "{{device_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1"
+    },
+    {
+      "key": "device_id",
+      "value": ""
+    },
+    {
+      "key": "telemetry_id",
+      "value": "1"
+    }
+  ]
+}
