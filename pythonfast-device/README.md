@@ -66,3 +66,4 @@ DELETE /api/v1/telemetry/{telemetry_id}
 ```
 
 `device_id` memakai UUID.
+`ts` pada telemetry memakai Format Unix Timestamp (Epoch Time)
