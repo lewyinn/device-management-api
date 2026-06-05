@@ -1,0 +1,293 @@
+{
+  "info": {
+    "_postman_id": "f4b7958f-f548-429f-b9f4-6224a8bef371",
+    "name": "Node JS Port 3000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "31703783"
+  },
+  "item": [
+    {
+      "name": "Device",
+      "item": [
+        {
+          "name": "POST - Send Device Data",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"Sensor Suhu\",\r\n  \"type\": \"DHT22\",\r\n  \"status\": \"active\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Collect All Data Device with pagination",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices?page=1&limit=10",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Collect Data by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/8a32d890-9e25-4b16-8ffe-de004853196b",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "8a32d890-9e25-4b16-8ffe-de004853196b"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT - Update Data with all field",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"Sensor Suhu Updated\",\r\n  \"type\": \"DHT22\",\r\n  \"status\": \"inactive\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/938267a1-2f59-4e09-831c-5c8726ef0be8",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "938267a1-2f59-4e09-831c-5c8726ef0be8"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH - Update data with field by body",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"status\": \"active\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/938267a1-2f59-4e09-831c-5c8726ef0be8",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "938267a1-2f59-4e09-831c-5c8726ef0be8"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE - Delete data by ID",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/938267a1-2f59-4e09-831c-5c8726ef0be8",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "938267a1-2f59-4e09-831c-5c8726ef0be8"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "### **Deskripsi:**\n\n> Semua endpoint untuk mengelola perangkat IoT (sensor, actuator, gateway). \n  \n\n**Base URL:**\n\n> [http://localhost:3000/api/v1](http://localhost:3000/api/v1) \n\n### Daftar Endpoint dalam folder ini\n\n| Method | Endpoint | Deskripsi |\n| --- | --- | --- |\n| POST | `/devices` | Mendaftarkan perangkat baru. Body wajib: name, type (sensor/actuator/gateway). Opsional: status (active/inactive, default active). |\n| GET | `/devices?page=1&limit=10` | Mengambil daftar semua perangkat dengan pagination. Parameter query: page (default 1), limit (default 10, max 50). |\n| GET | `/devices/{id}` | Mengambil detail satu perangkat berdasarkan ID UUID. |\n| PUT | `/devices/{id}` | Mengganti seluruh data perangkat. Body wajib: name, type, status. Semua field harus dikirim. |\n| PATCH | `/devices/{id}` | Mengupdate sebagian field perangkat. Body boleh berisi name dan/atau type dan/atau status. Minimal satu field. |\n| DELETE | `/devices/{id}` | Menghapus perangkat. Response: 204 No Content (tanpa body). |\n\n### Contoh nilai field:\n\n- `type`: `\"sensor\"`, `\"actuator\"`, `\"gateway\"`\n    \n- `status`: `\"active\"`, `\"inactive\"`\n    \n\n### Catatan penting:\n\n- ID perangkat menggunakan UUID dan dibuat otomatis oleh database.\n    \n- Jika menggunakan PUT, semua field wajib ada. Jika tidak, akan mendapatkan error `400 Bad Request`.\n    \n- Jika menggunakan PATCH, setidaknya satu field harus dikirim. Jika body kosong, akan mendapatkan error `400 Bad Request`."
+    },
+    {
+      "name": "DeviceTelemetry",
+      "item": [
+        {
+          "name": "POST - Create Telemetry",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"values\": {\r\n    \"temperature\": 28.5,\r\n    \"humidity\": 76.2\r\n  }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/5f8a4662-53b6-4ba5-a14d-b121896a43f8/telemetry",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "5f8a4662-53b6-4ba5-a14d-b121896a43f8",
+                "telemetry"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Read All Telemetry by Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/5f8a4662-53b6-4ba5-a14d-b121896a43f8/telemetry",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "5f8a4662-53b6-4ba5-a14d-b121896a43f8",
+                "telemetry"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE - Delete Telemetry by ID",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/v1/telemetry/1",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "telemetry",
+                "1"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET - Read LatestTelemetry by Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/v1/devices/5f8a4662-53b6-4ba5-a14d-b121896a43f8/telemetry/latest",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "v1",
+                "devices",
+                "5f8a4662-53b6-4ba5-a14d-b121896a43f8",
+                "telemetry",
+                "latest"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
