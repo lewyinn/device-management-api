@@ -23,13 +23,31 @@ http://localhost:8000/api-docs
 
 ## Database
 
-Default database memakai SQLite in-memory:
+Default database memakai PostgreSQL:
 
-```text
+```env
 DATABASE_URL=postgresql://user:password@localhost:5432/device_db
 ```
 
 Artinya data disimpan di PostgreSQL di port 5432 dengan nama database `device_db`.
+
+Connection pool juga bisa diatur lewat `.env`:
+
+```env
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=5
+DB_POOL_TIMEOUT=30
+DB_POOL_RECYCLE=1800
+```
+
+Artinya:
+
+```text
+DB_POOL_SIZE    = jumlah koneksi utama yang dijaga oleh aplikasi
+DB_MAX_OVERFLOW = koneksi tambahan sementara saat traffic naik
+DB_POOL_TIMEOUT = batas waktu menunggu koneksi tersedia dalam detik
+DB_POOL_RECYCLE = umur koneksi sebelum dibuat ulang dalam detik
+```
 
 Kalau nanti mau ganti database, ubah lewat `.env`:
 
