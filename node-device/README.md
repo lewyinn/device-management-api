@@ -29,6 +29,24 @@ Default database memakai PostgreSQL di port 5432 dengan nama database `device_db
 DATABASE_URL=postgres://user:password@localhost:5432/device_db
 ```
 
+Connection pool juga bisa diatur lewat `.env`:
+
+```env
+DB_POOL_MAX=10
+DB_POOL_MIN=0
+DB_POOL_ACQUIRE=30000
+DB_POOL_IDLE=10000
+```
+
+Artinya:
+
+```text
+DB_POOL_MAX     = maksimal koneksi database yang boleh dibuka aplikasi
+DB_POOL_MIN     = minimal koneksi yang dijaga tetap hidup
+DB_POOL_ACQUIRE = batas waktu menunggu koneksi tersedia dalam millisecond
+DB_POOL_IDLE    = waktu koneksi idle sebelum ditutup dalam millisecond
+```
+
 Kalau nanti mau ganti database, ubah lewat `.env`:
 
 ```env

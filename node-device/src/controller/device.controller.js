@@ -1,7 +1,7 @@
 import db from '../db/index.js';
 import { isUuid, isValidStatus } from '../utils/validation.js';
 
-const { Device } = db;
+const { sequelize, Device } = db;
 
 const validationFailed = (res, details) => res.status(400).json({
     error: 'Validation failed',
@@ -43,7 +43,10 @@ export const createDevice = async (req, res, next) => {
         }
         if (!validateStatus(res, status)) return;
 
-        const device = await Device.create({ name, type, status });
+        const device = await sequelize.transaction(async (transaction) => {
+            return Device.create({ name, type, status }, { transaction });
+        });
+
         return res.status(201).json({
             message: 'Device successfully registered',
             data: device.toJSON()
@@ -63,7 +66,8 @@ export const getDevices = async (req, res, next) => {
         const { pageNum, limitNum, offset } = pagination;
         const { count, rows } = await Device.findAndCountAll({
             offset,
-            limit: limitNum
+            limit: limitNum,
+            order: [['name', 'ASC']]
         });
 
         return res.status(200).json({
@@ -104,10 +108,16 @@ export const updateDevice = async (req, res, next) => {
         }
         if (!validateStatus(res, status)) return;
 
-        const device = await Device.findByPk(req.params.id);
+        const device = await sequelize.transaction(async (transaction) => {
+            const foundDevice = await Device.findByPk(req.params.id, { transaction });
+            if (!foundDevice) return null;
+
+            await foundDevice.update({ name, type, status }, { transaction });
+            return foundDevice;
+        });
+
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
 
-        await device.update({ name, type, status });
         return res.status(200).json({
             message: 'Device data fully updated successfully',
             data: device.toJSON()
@@ -131,10 +141,16 @@ export const patchDevice = async (req, res, next) => {
         }
         if (!validateStatus(res, updates.status)) return;
 
-        const device = await Device.findByPk(req.params.id);
+        const device = await sequelize.transaction(async (transaction) => {
+            const foundDevice = await Device.findByPk(req.params.id, { transaction });
+            if (!foundDevice) return null;
+
+            await foundDevice.update(updates, { transaction });
+            return foundDevice;
+        });
+
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
 
-        await device.update(updates);
         return res.status(200).json({
             message: 'Device status updated successfully',
             data: device.toJSON()
@@ -148,10 +164,15 @@ export const deleteDevice = async (req, res, next) => {
     try {
         if (!isUuid(req.params.id)) return invalidDeviceId(res);
 
-        const device = await Device.findByPk(req.params.id);
-        if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
+        const deleted = await sequelize.transaction(async (transaction) => {
+            const device = await Device.findByPk(req.params.id, { transaction });
+            if (!device) return false;
 
-        await device.destroy();
+            await device.destroy({ transaction });
+            return true;
+        });
+
+        if (!deleted) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
         return res.status(204).send();
     } catch (err) {
         return next(err);

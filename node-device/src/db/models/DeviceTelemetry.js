@@ -28,8 +28,16 @@ export default (sequelize) => {
         timestamps: false,
         indexes: [
             {
+                name: 'uq_device_telemetries_device_id_ts',
                 unique: true,
                 fields: ['device_id', 'ts']
+            },
+            {
+                name: 'idx_device_telemetries_device_id_ts_desc',
+                fields: [
+                    'device_id',
+                    { attribute: 'ts', order: 'DESC' }
+                ]
             }
         ]
     });

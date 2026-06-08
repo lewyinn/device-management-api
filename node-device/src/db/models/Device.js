@@ -24,7 +24,13 @@ export default (sequelize) => {
         }
     }, {
         tableName: 'devices',
-        timestamps: false
+        timestamps: false,
+        indexes: [
+            {
+                name: 'idx_devices_name',
+                fields: ['name']
+            }
+        ]
     });
 
     return Device;

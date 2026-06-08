@@ -1,7 +1,7 @@
 import db from '../db/index.js';
 import { isPositiveInteger, isUuid } from '../utils/validation.js';
 
-const { Device, DeviceTelemetry } = db;
+const { sequelize, Device, DeviceTelemetry } = db;
 
 const validationFailed = (res, details) => res.status(400).json({
     error: 'Validation failed',
@@ -40,29 +40,37 @@ export const createTelemetry = async (req, res, next) => {
             return validationFailed(res, "Attributes 'values.temperature' and 'values.humidity' must be numbers");
         }
 
-        const device = await Device.findByPk(id);
-        if (!device) return res.status(404).json({ error: `Device ID ${id} not found` });
+        const result = await sequelize.transaction(async (transaction) => {
+            const device = await Device.findByPk(id, { transaction });
+            if (!device) return { notFound: true };
 
-        const duplicate = await DeviceTelemetry.findOne({
-            where: { device_id: id, ts }
+            const duplicate = await DeviceTelemetry.findOne({
+                where: { device_id: id, ts },
+                transaction
+            });
+            if (duplicate) return { duplicate: true, device };
+
+            const telemetry = await DeviceTelemetry.create({
+                device_id: device.id,
+                ts,
+                temperature: values.temperature,
+                humidity: values.humidity
+            }, { transaction });
+
+            return { device, telemetry };
         });
-        if (duplicate) {
+
+        if (result.notFound) return res.status(404).json({ error: `Device ID ${id} not found` });
+        if (result.duplicate) {
             return res.status(409).json({
                 error: 'Duplicate telemetry timestamp',
                 details: `Telemetry for device ID ${id} at ts ${ts} already exists`
             });
         }
 
-        const telemetry = await DeviceTelemetry.create({
-            device_id: device.id,
-            ts,
-            temperature: values.temperature,
-            humidity: values.humidity
-        });
-
         return res.status(201).json({
             message: 'Telemetry successfully recorded',
-            data: formatTelemetry(telemetry, device)
+            data: formatTelemetry(result.telemetry, result.device)
         });
     } catch (err) {
         return next(err);
@@ -123,10 +131,15 @@ export const deleteTelemetry = async (req, res, next) => {
     try {
         if (!isPositiveInteger(req.params.id)) return invalidTelemetryId(res);
 
-        const telemetry = await DeviceTelemetry.findByPk(req.params.id);
-        if (!telemetry) return res.status(404).json({ error: `Telemetry ID ${req.params.id} not found` });
+        const deleted = await sequelize.transaction(async (transaction) => {
+            const telemetry = await DeviceTelemetry.findByPk(req.params.id, { transaction });
+            if (!telemetry) return false;
 
-        await telemetry.destroy();
+            await telemetry.destroy({ transaction });
+            return true;
+        });
+
+        if (!deleted) return res.status(404).json({ error: `Telemetry ID ${req.params.id} not found` });
         return res.status(204).send();
     } catch (err) {
         return next(err);
