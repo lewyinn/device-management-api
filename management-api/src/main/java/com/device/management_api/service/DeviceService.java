@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import com.device.management_api.entity.Device;
@@ -33,7 +35,7 @@ public class DeviceService {
         validateStatus(deviceStatus);
 
         Device device = new Device(
-                UUID.randomUUID().toString(),
+                UUID.randomUUID(),
                 name,
                 type,
                 deviceStatus
@@ -45,11 +47,12 @@ public class DeviceService {
     public DevicePage findAll(String pageValue, String limitValue) {
         int page = parsePositiveNumber(pageValue);
         int limit = Math.min(parsePositiveNumber(limitValue), MAX_LIMIT);
-        int offset = (page - 1) * limit;
 
         long totalData = deviceRepository.count();
         int totalPages = totalData == 0 ? 0 : (int) Math.ceil((double) totalData / limit);
-        List<Device> devices = deviceRepository.findAll(limit, offset);
+        List<Device> devices = deviceRepository
+                .findAll(PageRequest.of(page - 1, limit, Sort.by("name")))
+                .getContent();
 
         return new DevicePage(page, limit, totalData, totalPages, devices);
     }
@@ -59,7 +62,7 @@ public class DeviceService {
     }
 
     public Device update(String deviceId, Map<String, String> request) {
-        validateDeviceId(deviceId);
+        UUID id = parseDeviceId(deviceId);
 
         String name = value(request, "name");
         String type = value(request, "type");
@@ -71,7 +74,7 @@ public class DeviceService {
         validateStatus(status);
 
         getDevice(deviceId);
-        return deviceRepository.update(new Device(deviceId, name, type, status));
+        return deviceRepository.save(new Device(id, name, type, status));
     }
 
     public Device patch(String deviceId, Map<String, String> request) {
@@ -99,17 +102,17 @@ public class DeviceService {
             validateStatus(status);
         }
 
-        return deviceRepository.update(new Device(deviceId, name, type, status));
+        return deviceRepository.save(new Device(device.getId(), name, type, status));
     }
 
     public void delete(String deviceId) {
-        getDevice(deviceId);
-        deviceRepository.delete(deviceId);
+        Device device = getDevice(deviceId);
+        deviceRepository.deleteById(device.getId());
     }
 
     private Device getDevice(String deviceId) {
-        validateDeviceId(deviceId);
-        return deviceRepository.findById(deviceId)
+        UUID id = parseDeviceId(deviceId);
+        return deviceRepository.findById(id)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "Device ID " + deviceId + " not found",
@@ -117,11 +120,12 @@ public class DeviceService {
                 ));
     }
 
-    private void validateDeviceId(String deviceId) {
+    private UUID parseDeviceId(String deviceId) {
         try {
-            UUID.fromString(deviceId);
+            return UUID.fromString(deviceId);
         } catch (RuntimeException error) {
             validationError("Device ID must be a valid UUID");
+            return null;
         }
     }
 

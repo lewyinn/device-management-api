@@ -8,16 +8,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.device.management_api.repository.DeviceRepository;
+import com.device.management_api.repository.DeviceTelemetryRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -28,15 +31,26 @@ class DeviceControllerTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private DeviceRepository deviceRepository;
+
+    @Autowired
+    private DeviceTelemetryRepository telemetryRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final List<UUID> createdDeviceIds = new ArrayList<>();
 
 
-    @BeforeEach
-    void cleanDatabase() {
-        jdbcTemplate.update("DELETE FROM device_telemetries");
-        jdbcTemplate.update("DELETE FROM devices");
+    @AfterEach
+    void cleanTestDataOnly() {
+        for (UUID deviceId : createdDeviceIds) {
+            telemetryRepository.findAllByDevice_IdOrderByTsDesc(deviceId)
+                    .forEach(telemetry -> telemetryRepository.deleteById(telemetry.id()));
+
+            if (deviceRepository.existsById(deviceId)) {
+                deviceRepository.deleteById(deviceId);
+            }
+        }
+        createdDeviceIds.clear();
     }
 
     @Test
@@ -60,13 +74,12 @@ class DeviceControllerTests {
 
         JsonNode createBody = objectMapper.readTree(createResult.getResponse().getContentAsString());
         String deviceId = createBody.path("data").path("id").asText();
-        UUID.fromString(deviceId);
+        createdDeviceIds.add(UUID.fromString(deviceId));
 
         mockMvc.perform(get("/api/v1/devices?page=1&limit=10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.meta.page").value(1))
-                .andExpect(jsonPath("$.meta.limit").value(10))
-                .andExpect(jsonPath("$.data.length()").value(1));
+                .andExpect(jsonPath("$.meta.limit").value(10));
 
         mockMvc.perform(get("/api/v1/devices/not-a-uuid"))
                 .andExpect(status().isBadRequest())
@@ -120,6 +133,8 @@ class DeviceControllerTests {
 
         JsonNode createDeviceBody = objectMapper.readTree(createDeviceResult.getResponse().getContentAsString());
         String deviceId = createDeviceBody.path("data").path("id").asText();
+        UUID deviceUuid = UUID.fromString(deviceId);
+        createdDeviceIds.add(deviceUuid);
 
         mockMvc.perform(post("/api/v1/devices/not-a-uuid/telemetry")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,7 +149,7 @@ class DeviceControllerTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.details").value("Device ID must be a valid UUID"));
 
-        MvcResult createTelemetryResult = mockMvc.perform(post("/api/v1/devices/{device_id}/telemetry", deviceId)
+        mockMvc.perform(post("/api/v1/devices/{device_id}/telemetry", deviceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -146,17 +161,11 @@ class DeviceControllerTests {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.message").value("Telemetry successfully recorded"))
-                .andExpect(jsonPath("$.data.device_id").value(deviceId))
-                .andReturn();
+                .andExpect(jsonPath("$.data.device_id").value(deviceId));
 
-        JsonNode createTelemetryBody = objectMapper.readTree(createTelemetryResult.getResponse().getContentAsString());
-        long telemetryTs = createTelemetryBody.path("data").path("data").path("ts").asLong();
-        Integer telemetryId = jdbcTemplate.queryForObject(
-                "SELECT id FROM device_telemetries WHERE device_id = ? AND ts = ?",
-                Integer.class,
-                deviceId,
-                telemetryTs
-        );
+        Integer telemetryId = telemetryRepository.findFirstByDevice_IdOrderByTsDesc(deviceUuid)
+                .orElseThrow()
+                .id();
 
         mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry", deviceId))
                 .andExpect(status().isOk())

@@ -28,7 +28,7 @@ http://localhost:8080/openapi.json
 
 ## Database
 
-Default database memakai SQLite in-memory:
+Default database memakai SQLite in-memory dan ORM Hibernate/JPA:
 
 ```text
 DATABASE_URL=jdbc:sqlite:file:management-api?mode=memory&cache=shared
@@ -36,17 +36,36 @@ DATABASE_URL=jdbc:sqlite:file:management-api?mode=memory&cache=shared
 
 Artinya data selalu kosong lagi setiap server restart.
 
-Kalau nanti mau ganti database, ubah lewat environment variable:
+Sebelum menjalankan server, buat file `.env` dari `.env.example`.
+
+Di Windows:
+
+```bash
+copy .env.example .env
+```
+
+Kalau nanti mau ganti database, ubah isi `.env`:
 
 ```env
 DATABASE_URL=jdbc:sqlite:./devices.db
+```
+
+Contoh kalau mau pakai PostgreSQL:
+
+```env
+DATABASE_URL=jdbc:postgresql://localhost:5432/device_db
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=your_password
+DATABASE_DRIVER=org.postgresql.Driver
+DATABASE_DIALECT=org.hibernate.dialect.PostgreSQLDialect
+DDL_AUTO=update
 ```
 
 Semua konfigurasi database ada di:
 
 ```text
 src/main/resources/application.properties
-src/main/resources/schema.sql
+src/main/java/com/device/management_api/entity
 src/main/java/com/device/management_api/repository
 ```
 

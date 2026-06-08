@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -32,16 +32,16 @@ public class DeviceTelemetryService {
         Values values = getValues(request);
 
         long ts = System.currentTimeMillis();
-        if (telemetryRepository.existsByDeviceIdAndTs(device.id(), ts)) {
+        if (telemetryRepository.existsByDevice_IdAndTs(device.getId(), ts)) {
             duplicateTelemetry(device.id(), ts);
         }
 
         try {
             DeviceTelemetry telemetry = telemetryRepository.save(
-                    new DeviceTelemetry(null, device.id(), ts, values.temperature(), values.humidity())
+                    new DeviceTelemetry(null, device, ts, values.temperature(), values.humidity())
             );
             return new TelemetryResult(device, telemetry);
-        } catch (DuplicateKeyException error) {
+        } catch (DataIntegrityViolationException error) {
             duplicateTelemetry(device.id(), ts);
             return null;
         }
@@ -49,13 +49,13 @@ public class DeviceTelemetryService {
 
     public TelemetryListResult findAllByDeviceId(String deviceId) {
         Device device = getDevice(deviceId);
-        List<DeviceTelemetry> telemetries = telemetryRepository.findAllByDeviceId(device.id());
+        List<DeviceTelemetry> telemetries = telemetryRepository.findAllByDevice_IdOrderByTsDesc(device.getId());
         return new TelemetryListResult(device, telemetries);
     }
 
     public TelemetryResult findLatestByDeviceId(String deviceId) {
         Device device = getDevice(deviceId);
-        DeviceTelemetry telemetry = telemetryRepository.findLatestByDeviceId(device.id())
+        DeviceTelemetry telemetry = telemetryRepository.findFirstByDevice_IdOrderByTsDesc(device.getId())
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "Telemetry for device ID " + device.id() + " not found",
@@ -76,8 +76,8 @@ public class DeviceTelemetryService {
     }
 
     private Device getDevice(String deviceId) {
-        validateDeviceId(deviceId);
-        return deviceRepository.findById(deviceId)
+        UUID id = parseDeviceId(deviceId);
+        return deviceRepository.findById(id)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "Device ID " + deviceId + " not found",
@@ -85,30 +85,35 @@ public class DeviceTelemetryService {
                 ));
     }
 
-    private void validateDeviceId(String deviceId) {
+    private UUID parseDeviceId(String deviceId) {
         try {
-            UUID.fromString(deviceId);
+            return UUID.fromString(deviceId);
         } catch (RuntimeException error) {
             validationError("Device ID must be a valid UUID");
+            return null;
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Values getValues(Map<String, Object> request) {
         Object rawValues = request == null ? null : request.get("values");
-        if (!(rawValues instanceof Map<?, ?>)) {
-            validationError("Attributes 'values.temperature' and 'values.humidity' must be numbers");
+        if (!(rawValues instanceof Map<?, ?> valuesMap)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Validation failed",
+                    "Attributes 'values.temperature' and 'values.humidity' must be numbers"
+            );
         }
-        Map<String, Object> valuesMap = (Map<String, Object>) rawValues;
 
         Object temperature = valuesMap.get("temperature");
         Object humidity = valuesMap.get("humidity");
 
-        if (!(temperature instanceof Number) || !(humidity instanceof Number)) {
-            validationError("Attributes 'values.temperature' and 'values.humidity' must be numbers");
+        if (!(temperature instanceof Number temperatureNumber) || !(humidity instanceof Number humidityNumber)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Validation failed",
+                    "Attributes 'values.temperature' and 'values.humidity' must be numbers"
+            );
         }
-        Number temperatureNumber = (Number) temperature;
-        Number humidityNumber = (Number) humidity;
 
         return new Values(temperatureNumber.doubleValue(), humidityNumber.doubleValue());
     }
