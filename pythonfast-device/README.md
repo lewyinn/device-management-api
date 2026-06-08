@@ -26,21 +26,15 @@ http://localhost:8000/api-docs
 Default database memakai SQLite in-memory:
 
 ```text
-DATABASE_URL=sqlite://
+DATABASE_URL=postgresql://user:password@localhost:5432/device_db
 ```
 
-Artinya data selalu kosong lagi setiap server restart.
+Artinya data disimpan di PostgreSQL di port 5432 dengan nama database `device_db`.
 
 Kalau nanti mau ganti database, ubah lewat `.env`:
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/device_db
-```
-
-Atau untuk SQLite file:
-
-```env
-DATABASE_URL=sqlite:///./devices.db
+DATABASE_URL=
 ```
 
 Semua konfigurasi database ada di:

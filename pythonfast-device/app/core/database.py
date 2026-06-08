@@ -7,13 +7,11 @@ from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite://")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine_options = {}
 if DATABASE_URL.startswith("sqlite"):
     engine_options["connect_args"] = {"check_same_thread": False}
-
-if DATABASE_URL == "sqlite://":
     engine_options["poolclass"] = StaticPool
 
 engine = create_engine(
