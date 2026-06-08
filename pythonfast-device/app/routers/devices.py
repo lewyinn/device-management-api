@@ -1,12 +1,12 @@
 from math import ceil
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models import Device
-from app.schemas import DeviceCreate, DevicePartialUpdate, DeviceUpdate
+from app.schemas import DeviceCreate, DeviceUpdate
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
 
@@ -309,28 +309,43 @@ async def update_device(
 )
 async def patch_device(
     device_id: UUID,
-    payload: DevicePartialUpdate,
+    payload: dict = Body(
+        ...,
+        openapi_examples={
+            "statusOnly": {
+                "summary": "Update status only",
+                "value": {
+                    "status": "active",
+                },
+            }
+        },
+    ),
     db: Session = Depends(get_db),
 ):
-    data = payload.model_dump(exclude_unset=True)
+    data = {
+        key: payload[key]
+        for key in ["name", "type", "status"]
+        if key in payload
+    }
+
     if not data:
         validation_error("At least one field must be provided")
 
     device = get_device(db, device_id)
 
     if "name" in data:
-        if not payload.name:
+        if not data["name"]:
             validation_error("Attribute 'name' is required")
-        device.name = payload.name
+        device.name = data["name"]
 
     if "type" in data:
-        if not payload.type:
+        if not data["type"]:
             validation_error("Attribute 'type' is required")
-        device.type = payload.type
+        device.type = data["type"]
 
     if "status" in data:
-        check_status(payload.status)
-        device.status = payload.status
+        check_status(data["status"])
+        device.status = data["status"]
 
     db.commit()
     db.refresh(device)

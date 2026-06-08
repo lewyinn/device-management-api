@@ -14,8 +14,3 @@ class DeviceUpdate(BaseModel):
     type: Optional[str] = None
     status: Optional[str] = None
 
-
-class DevicePartialUpdate(BaseModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
-    status: Optional[str] = None
