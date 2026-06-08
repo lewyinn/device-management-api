@@ -61,6 +61,26 @@ DATABASE_DIALECT=org.hibernate.dialect.PostgreSQLDialect
 DDL_AUTO=update
 ```
 
+Connection pool HikariCP juga bisa diatur lewat `.env`:
+
+```env
+DB_POOL_MAX=10
+DB_POOL_MIN=0
+DB_POOL_CONNECTION_TIMEOUT=30000
+DB_POOL_IDLE_TIMEOUT=600000
+DB_POOL_MAX_LIFETIME=1800000
+```
+
+Artinya:
+
+```text
+DB_POOL_MAX                = maksimal koneksi database yang boleh dibuka aplikasi
+DB_POOL_MIN                = minimal koneksi idle yang dijaga tetap hidup
+DB_POOL_CONNECTION_TIMEOUT = batas waktu menunggu koneksi tersedia dalam millisecond
+DB_POOL_IDLE_TIMEOUT       = waktu koneksi idle sebelum ditutup dalam millisecond
+DB_POOL_MAX_LIFETIME       = umur maksimal koneksi sebelum dibuat ulang dalam millisecond
+```
+
 Semua konfigurasi database ada di:
 
 ```text
