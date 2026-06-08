@@ -23,18 +23,22 @@ http://localhost:3000/api-docs
 
 ## Database
 
-Default database memakai SQLite in-memory:
+Default database memakai PostgreSQL di port 5432 dengan nama database `device_db`:
 
-```text
-storage: ':memory:'
+```env
+DATABASE_URL=postgres://user:password@localhost:5432/device_db
 ```
-
-Artinya data selalu kosong lagi setiap server restart.
 
 Kalau nanti mau ganti database, ubah lewat `.env`:
 
 ```env
-DATABASE_URL=postgres://user:password@localhost:5432/device_db
+DATABASE_URL=
+```
+
+Jangan Lupa Install PG jika menggunakan postgresql
+
+```bash
+npm install pg
 ```
 
 Atau untuk SQLite file:
