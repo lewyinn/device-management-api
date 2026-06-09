@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -8,6 +8,7 @@ class DeviceTelemetry(Base):
     __tablename__ = "device_telemetries"
     __table_args__ = (
         UniqueConstraint("device_id", "ts", name="uq_device_telemetry_ts"),
+        Index("idx_device_telemetry_device_id_ts", "device_id", "ts")
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)

@@ -120,9 +120,16 @@ async def create_device(
         type=payload.type,
         status=device_status,
     )
-    db.add(device)
-    db.commit()
-    db.refresh(device)
+    try:
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
 
     return {
         "message": "Device successfully registered",
@@ -179,7 +186,7 @@ async def list_devices(
 
     total_data = db.query(Device).count()
     offset = (page - 1) * limit
-    devices = db.query(Device).offset(offset).limit(limit).all()
+    devices = db.query(Device).order_by(Device.name.asc()).offset(offset).limit(limit).all()
 
     return {
         "message": "Success retrieving devices",
@@ -269,12 +276,19 @@ async def update_device(
     check_status(payload.status)
 
     device = get_device(db, device_id)
-    device.name = payload.name
-    device.type = payload.type
-    device.status = payload.status
 
-    db.commit()
-    db.refresh(device)
+    try:
+        device.name = payload.name
+        device.type = payload.type
+        device.status = payload.status
+        db.commit()
+        db.refresh(device)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
 
     return {
         "message": "Device data fully updated successfully",
@@ -347,8 +361,15 @@ async def patch_device(
         check_status(data["status"])
         device.status = data["status"]
 
-    db.commit()
-    db.refresh(device)
+    try:
+        db.commit()
+        db.refresh(device)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
 
     return {
         "message": "Device status updated successfully",
@@ -372,6 +393,13 @@ async def delete_device(
     db: Session = Depends(get_db),
 ):
     device = get_device(db, device_id)
-    db.delete(device)
-    db.commit()
+    try:
+        db.delete(device)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

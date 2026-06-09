@@ -192,10 +192,11 @@ async def create_telemetry(
         temperature=temperature,
         humidity=humidity,
     )
-    db.add(telemetry)
 
     try:
+        db.add(telemetry)
         db.commit()
+        db.refresh(telemetry)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -205,8 +206,12 @@ async def create_telemetry(
                 "details": f"Telemetry for device ID {device.id} at ts {ts} already exists",
             },
         )
-
-    db.refresh(telemetry)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
 
     return {
         "message": "Telemetry successfully recorded",
@@ -341,6 +346,14 @@ async def delete_telemetry(
     db: Session = Depends(get_db),
 ):
     telemetry = get_telemetry(db, telemetry_id)
-    db.delete(telemetry)
-    db.commit()
+
+    try:
+        db.delete(telemetry)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Internal server error"},
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
