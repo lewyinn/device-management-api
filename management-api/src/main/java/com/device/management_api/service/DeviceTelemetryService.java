@@ -14,6 +14,9 @@ import com.device.management_api.exception.ApiException;
 import com.device.management_api.repository.DeviceRepository;
 import com.device.management_api.repository.DeviceTelemetryRepository;
 
+import org.springframework.transaction.annotation.Transactional;
+
+
 @Service
 public class DeviceTelemetryService {
     private final DeviceRepository deviceRepository;
@@ -27,6 +30,7 @@ public class DeviceTelemetryService {
         this.telemetryRepository = telemetryRepository;
     }
 
+    @Transactional
     public TelemetryResult create(String deviceId, Map<String, Object> request) {
         Device device = getDevice(deviceId);
         Values values = getValues(request);
@@ -64,6 +68,7 @@ public class DeviceTelemetryService {
         return new TelemetryResult(device, telemetry);
     }
 
+    @Transactional
     public void deleteById(String telemetryId) {
         int id = parseTelemetryId(telemetryId);
         DeviceTelemetry telemetry = telemetryRepository.findById(id)

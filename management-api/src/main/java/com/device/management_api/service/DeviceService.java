@@ -4,14 +4,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.device.management_api.entity.Device;
 import com.device.management_api.exception.ApiException;
 import com.device.management_api.repository.DeviceRepository;
+
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class DeviceService {
@@ -23,6 +25,7 @@ public class DeviceService {
         this.deviceRepository = deviceRepository;
     }
 
+    @Transactional
     public Device create(Map<String, String> request) {
         String name = value(request, "name");
         String type = value(request, "type");
@@ -61,6 +64,7 @@ public class DeviceService {
         return getDevice(deviceId);
     }
 
+    @Transactional
     public Device update(String deviceId, Map<String, String> request) {
         UUID id = parseDeviceId(deviceId);
 
@@ -77,6 +81,7 @@ public class DeviceService {
         return deviceRepository.save(new Device(id, name, type, status));
     }
 
+    @Transactional
     public Device patch(String deviceId, Map<String, String> request) {
         Device device = getDevice(deviceId);
         if (request == null || request.isEmpty()) {
@@ -105,6 +110,7 @@ public class DeviceService {
         return deviceRepository.save(new Device(device.getId(), name, type, status));
     }
 
+    @Transactional
     public void delete(String deviceId) {
         Device device = getDevice(deviceId);
         deviceRepository.deleteById(device.getId());

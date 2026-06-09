@@ -6,9 +6,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Index;
 
 @Entity
-@Table(name = "devices")
+@Table(
+    name = "devices",
+    indexes = @Index(name = "idx_device_name", columnList = "name")
+)
 public class Device {
     @Id
     private UUID id;

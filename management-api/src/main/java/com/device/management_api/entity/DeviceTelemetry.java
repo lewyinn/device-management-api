@@ -10,11 +10,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Index;
 
 @Entity
 @Table(
         name = "device_telemetries",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"device_id", "ts"})
+        uniqueConstraints = @UniqueConstraint(columnNames = {"device_id", "ts"}),
+        indexes = @Index(name = "idx_device_telemetries_device_id_ts_desc", columnList = "device_id, ts DESC")
 )
 public class DeviceTelemetry {
     @Id
