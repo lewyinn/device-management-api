@@ -1,14 +1,13 @@
 import db from '../db/index.js';
-import { isUuid, isValidStatus } from '../utils/validation.js';
+import { clearDeviceCache } from '../repository/device.repository.js';
 
 const { sequelize, Device } = db;
 
-const validationFailed = (res, details) => res.status(400).json({
-    error: 'Validation failed',
-    details
-});
+const isUuid = (value) => (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+);
 
-const invalidDeviceId = (res) => validationFailed(res, 'Device ID must be a valid UUID');
+const isValidStatus = (value) => ['active', 'inactive'].includes(value);
 
 const getPagination = (page = '1', limit = '10') => {
     const pageNum = Number(page);
@@ -28,7 +27,10 @@ const getPagination = (page = '1', limit = '10') => {
 
 const validateStatus = (res, status) => {
     if (status !== undefined && !isValidStatus(status)) {
-        validationFailed(res, "Status must be 'active' or 'inactive'");
+        res.status(400).json({
+            error: 'Validation failed',
+            details: "Status must be 'active' or 'inactive'"
+        });
         return false;
     }
 
@@ -39,7 +41,10 @@ export const createDevice = async (req, res, next) => {
     try {
         const { name, type, status } = req.body;
         if (!name || !type) {
-            return validationFailed(res, !name ? "Attribute 'name' is required" : "Attribute 'type' is required");
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: !name ? "Attribute 'name' is required" : "Attribute 'type' is required"
+            });
         }
         if (!validateStatus(res, status)) return;
 
@@ -60,7 +65,10 @@ export const getDevices = async (req, res, next) => {
     try {
         const pagination = getPagination(req.query.page, req.query.limit);
         if (!pagination) {
-            return validationFailed(res, "Query parameter 'page' or 'limit' must be a valid number");
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: "Query parameter 'page' or 'limit' must be a valid number"
+            });
         }
 
         const { pageNum, limitNum, offset } = pagination;
@@ -87,7 +95,12 @@ export const getDevices = async (req, res, next) => {
 
 export const getDeviceById = async (req, res, next) => {
     try {
-        if (!isUuid(req.params.id)) return invalidDeviceId(res);
+        if (!isUuid(req.params.id)) {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'Device ID must be a valid UUID'
+            });
+        }
 
         const device = await Device.findByPk(req.params.id);
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
@@ -100,11 +113,19 @@ export const getDeviceById = async (req, res, next) => {
 
 export const updateDevice = async (req, res, next) => {
     try {
-        if (!isUuid(req.params.id)) return invalidDeviceId(res);
+        if (!isUuid(req.params.id)) {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'Device ID must be a valid UUID'
+            });
+        }
 
         const { name, type, status } = req.body;
         if (!name || !type || !status) {
-            return validationFailed(res, 'All attributes (name, type, status) are required for PUT method');
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'All attributes (name, type, status) are required for PUT method'
+            });
         }
         if (!validateStatus(res, status)) return;
 
@@ -117,6 +138,7 @@ export const updateDevice = async (req, res, next) => {
         });
 
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
+        clearDeviceCache(req.params.id);
 
         return res.status(200).json({
             message: 'Device data fully updated successfully',
@@ -129,7 +151,12 @@ export const updateDevice = async (req, res, next) => {
 
 export const patchDevice = async (req, res, next) => {
     try {
-        if (!isUuid(req.params.id)) return invalidDeviceId(res);
+        if (!isUuid(req.params.id)) {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'Device ID must be a valid UUID'
+            });
+        }
 
         const updates = {};
         if (req.body.name !== undefined) updates.name = req.body.name;
@@ -137,7 +164,10 @@ export const patchDevice = async (req, res, next) => {
         if (req.body.status !== undefined) updates.status = req.body.status;
 
         if (Object.keys(updates).length === 0) {
-            return validationFailed(res, 'At least one field must be provided');
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'At least one field must be provided'
+            });
         }
         if (!validateStatus(res, updates.status)) return;
 
@@ -150,6 +180,7 @@ export const patchDevice = async (req, res, next) => {
         });
 
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
+        clearDeviceCache(req.params.id);
 
         return res.status(200).json({
             message: 'Device status updated successfully',
@@ -162,7 +193,12 @@ export const patchDevice = async (req, res, next) => {
 
 export const deleteDevice = async (req, res, next) => {
     try {
-        if (!isUuid(req.params.id)) return invalidDeviceId(res);
+        if (!isUuid(req.params.id)) {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: 'Device ID must be a valid UUID'
+            });
+        }
 
         const deleted = await sequelize.transaction(async (transaction) => {
             const device = await Device.findByPk(req.params.id, { transaction });
@@ -173,6 +209,7 @@ export const deleteDevice = async (req, res, next) => {
         });
 
         if (!deleted) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
+        clearDeviceCache(req.params.id);
         return res.status(204).send();
     } catch (err) {
         return next(err);

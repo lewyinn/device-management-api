@@ -1,6 +1,6 @@
 import { Sequelize } from 'sequelize';
+import cassandra from 'cassandra-driver';
 import defineDevice from './models/Device.js';
-import defineDeviceTelemetry from './models/DeviceTelemetry.js';
 import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
@@ -23,23 +23,23 @@ const sequelize = process.env.DATABASE_URL
     });
 
 const Device = defineDevice(sequelize);
-const DeviceTelemetry = defineDeviceTelemetry(sequelize);
 
-Device.hasMany(DeviceTelemetry, {
-    foreignKey: 'device_id',
-    as: 'telemetries',
-    onDelete: 'CASCADE'
-});
+const cassandraContactPoints = (process.env.CASSANDRA_CONTACT_POINTS || '127.0.0.1')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-DeviceTelemetry.belongsTo(Device, {
-    foreignKey: 'device_id',
-    as: 'device'
+const cassandraClient = new cassandra.Client({
+    contactPoints: cassandraContactPoints,
+    localDataCenter: process.env.CASSANDRA_LOCAL_DATACENTER || 'datacenter1',
+    keyspace: process.env.CASSANDRA_KEYSPACE || 'device_management'
 });
 
 export default {
     sequelize,
     Device,
-    DeviceTelemetry,
+    cassandraClient,
+    cassandraTypes: cassandra.types,
     sync: async (options = {}) => {
         await sequelize.sync(options);
         console.log('Database synced');

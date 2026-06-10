@@ -8,8 +8,8 @@ export const errorHandler = (err, req, res, next) => {
     }
     if (err.name === 'SequelizeUniqueConstraintError') {
         return res.status(409).json({
-            error: 'Duplicate telemetry timestamp',
-            details: 'Telemetry timestamp must be unique per device'
+            error: 'Duplicate data',
+            details: 'Data already exists'
         });
     }
     res.status(500).json({ error: 'Internal server error' });
