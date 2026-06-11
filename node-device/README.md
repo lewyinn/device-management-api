@@ -35,7 +35,7 @@ Telemetry disimpan di Cassandra. Table yang digunakan:
 CREATE TABLE device_telemetries (
     device_id uuid,
     record_month text,
-    ts timestamp,
+    ts bigint,
     temperature double,
     humidity double,
     PRIMARY KEY ((device_id, record_month), ts)
@@ -48,7 +48,6 @@ Config Cassandra bisa diatur lewat `.env`:
 CASSANDRA_CONTACT_POINTS=127.0.0.1
 CASSANDRA_LOCAL_DATACENTER=datacenter1
 CASSANDRA_KEYSPACE=device_management
-DEVICE_CACHE_TTL_MS=300000
 ```
 
 Arsitektur database:
@@ -61,16 +60,15 @@ Cassandra  = menyimpan telemetry/time-series data
 Write telemetry dibuat ringan untuk pola IoT production:
 
 ```text
-1. API cek device dari cache terlebih dahulu.
-2. Kalau belum ada di cache, API ambil device dari PostgreSQL.
-3. Data telemetry langsung ditulis ke Cassandra.
-4. Query history telemetry dibaca dari Cassandra berdasarkan device_id dan record_month.
+1. API cek device langsung ke PostgreSQL.
+2. Data telemetry langsung ditulis ke Cassandra.
+3. Query history telemetry dibaca dari Cassandra berdasarkan device_id dan record_month.
 ```
 
 Folder `src/repository` berisi kode akses database:
 
 ```text
-device.repository.js              = lookup device dari PostgreSQL + cache sederhana
+device.repository.js              = lookup device dari PostgreSQL
 telemetry.cassandra.repository.js = query insert/read telemetry ke Cassandra
 ```
 
@@ -128,9 +126,21 @@ PATCH  /api/v1/devices/{device_id}
 DELETE /api/v1/devices/{device_id}
 
 POST   /api/v1/devices/{device_id}/telemetry
-GET    /api/v1/devices/{device_id}/telemetry?start_month=2026-06&end_month=2026-06
+GET    /api/v1/devices/{device_id}/telemetry?start_month=2026-01&end_month=2026-12
 GET    /api/v1/devices/{device_id}/telemetry/latest
 ```
 
 `id` pada device memakai UUID.
-`ts` pada telemetry memakai Format Unix Timestamp (Epoch Time)
+`ts` dibuat otomatis oleh API saat request diterima, lalu disimpan di Cassandra dan dikembalikan sebagai Unix epoch milliseconds.
+Default query history telemetry adalah `start_month=2026-01` dan `end_month=2026-12`.
+
+Contoh payload telemetry:
+
+```json
+{
+  "values": {
+    "temperature": 28.5,
+    "humidity": 75.2
+  }
+}
+```

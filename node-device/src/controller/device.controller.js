@@ -1,5 +1,4 @@
 import db from '../db/index.js';
-import { clearDeviceCache } from '../repository/device.repository.js';
 
 const { sequelize, Device } = db;
 
@@ -138,7 +137,6 @@ export const updateDevice = async (req, res, next) => {
         });
 
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
-        clearDeviceCache(req.params.id);
 
         return res.status(200).json({
             message: 'Device data fully updated successfully',
@@ -180,7 +178,6 @@ export const patchDevice = async (req, res, next) => {
         });
 
         if (!device) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
-        clearDeviceCache(req.params.id);
 
         return res.status(200).json({
             message: 'Device status updated successfully',
@@ -209,7 +206,6 @@ export const deleteDevice = async (req, res, next) => {
         });
 
         if (!deleted) return res.status(404).json({ error: `Device ID ${req.params.id} not found` });
-        clearDeviceCache(req.params.id);
         return res.status(204).send();
     } catch (err) {
         return next(err);

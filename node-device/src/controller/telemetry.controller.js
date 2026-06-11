@@ -10,10 +10,8 @@ const isUuid = (value) => (
 );
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 const isRecordMonth = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
-const currentMonth = () => {
-    const now = new Date();
-    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-};
+const DEFAULT_START_MONTH = '2026-01';
+const DEFAULT_END_MONTH = '2026-12';
 
 const formatTelemetry = (telemetry, device) => ({
     device_id: device.id,
@@ -74,8 +72,8 @@ export const getTelemetryByDevice = async (req, res, next) => {
         const device = await findDeviceForTelemetry(id);
         if (!device) return res.status(404).json({ error: `Device ID ${id} not found` });
 
-        const startMonth = req.query.start_month || currentMonth();
-        const endMonth = req.query.end_month || startMonth;
+        const startMonth = req.query.start_month || DEFAULT_START_MONTH;
+        const endMonth = req.query.end_month || DEFAULT_END_MONTH;
 
         if (!isRecordMonth(startMonth) || !isRecordMonth(endMonth) || startMonth > endMonth) {
             return res.status(400).json({

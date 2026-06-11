@@ -201,7 +201,7 @@
               }
             },
             "url": {
-              "raw": "http://localhost:3000/api/v1/devices/5f8a4662-53b6-4ba5-a14d-b121896a43f8/telemetry",
+              "raw": "http://localhost:3000/api/v1/devices/5f8a4662-53b6-4ba5-a14d-b121896a43f8/telemetry?start_month=2026-01&end_month=2026-12",
               "protocol": "http",
               "host": [
                 "localhost"
@@ -213,6 +213,16 @@
                 "devices",
                 "5f8a4662-53b6-4ba5-a14d-b121896a43f8",
                 "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "start_month",
+                  "value": "2026-01"
+                },
+                {
+                  "key": "end_month",
+                  "value": "2026-12"
+                }
               ]
             }
           },

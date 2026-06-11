@@ -44,7 +44,7 @@ const router = express.Router();
  *                 deviceName: Sensor-Suhu
  *                 deviceType: PM2120
  *                 data:
- *                   ts: 1717488000000
+ *                   ts: generated_epoch_ms
  *                   temperature: 28.5
  *                   humidity: 75.2
  *       400:
@@ -91,13 +91,13 @@ router.post('/:id/telemetry', createTelemetry);
  *       - in: query
  *         name: start_month
  *         required: false
- *         description: Bulan awal data telemetry dengan format YYYY-MM. Default bulan sekarang.
- *         schema: { type: string, example: "2026-06" }
+ *         description: Bulan awal data telemetry dengan format YYYY-MM. Default 2026-01.
+ *         schema: { type: string, default: "2026-01", example: "2026-01" }
  *       - in: query
  *         name: end_month
  *         required: false
- *         description: Bulan akhir data telemetry dengan format YYYY-MM. Default sama dengan start_month.
- *         schema: { type: string, example: "2026-06" }
+ *         description: Bulan akhir data telemetry dengan format YYYY-MM. Default 2026-12.
+ *         schema: { type: string, default: "2026-12", example: "2026-12" }
  *     responses:
  *       200:
  *         description: OK
@@ -111,10 +111,10 @@ router.post('/:id/telemetry', createTelemetry);
  *               deviceName: Sensor-Suhu
  *               deviceType: PM2120
  *               data:
- *                 - ts: 1717488000000
+ *                 - ts: generated_epoch_ms
  *                   temperature: 28.5
  *                   humidity: 75.2
- *                 - ts: 1717484400000
+ *                 - ts: generated_epoch_ms
  *                   temperature: 27.3
  *                   humidity: 80.1
  *       400:
@@ -172,7 +172,7 @@ router.get('/:id/telemetry', getTelemetryByDevice);
  *                 deviceName: Sensor-Suhu
  *                 deviceType: PM2120
  *                 data:
- *                   ts: 1717488000000
+ *                   ts: generated_epoch_ms
  *                   temperature: 28.5
  *                   humidity: 75.2
  *       400:
