@@ -1,13 +1,14 @@
 import os
 
 from dotenv import load_dotenv
+from sqlalchemy import text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./database.sqlite"
 
 
 def get_int_env(key: str, default: int) -> int:
@@ -31,6 +32,22 @@ engine = create_engine(
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+def check_sql_database():
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
+    print("SQL database connection established")
+
+
+def sync_sql_database():
+    Base.metadata.create_all(bind=engine)
+    print("SQL database synced")
+
+
+def close_sql_database():
+    engine.dispose()
+    print("SQL database connection closed")
 
 
 def get_db():

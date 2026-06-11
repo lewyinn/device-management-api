@@ -1,65 +1,25 @@
-import time
+import re
+from datetime import datetime, timezone
+from time import time
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
+from app.core.cassandra import (
+    CassandraTelemetryRepository,
+    get_telemetry_repository,
+)
 from app.core.database import get_db
-from app.models import Device, DeviceTelemetry
+from app.models import Device
 from app.schemas import TelemetryCreate
 
 devices_router = APIRouter(prefix="/api/v1/devices", tags=["Telemetry"])
-telemetry_router = APIRouter(prefix="/api/v1/telemetry", tags=["Telemetry"])
 
-
-def bad_request_example(details: str):
-    return {
-        "description": "Bad Request",
-        "content": {
-            "application/json": {
-                "example": {
-                    "error": "Validation failed",
-                    "details": details,
-                }
-            }
-        },
-    }
-
-
-SERVER_ERROR = {
-    "description": "Internal Server Error",
-    "content": {
-        "application/json": {"example": {"error": "Internal server error"}}
-    },
-}
-
-DEVICE_NOT_FOUND = {
-    "description": "Device Not Found",
-    "content": {
-        "application/json": {"example": {"error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"}}
-    },
-}
-
-TELEMETRY_NOT_FOUND = {
-    "description": "Telemetry Not Found",
-    "content": {
-        "application/json": {"example": {"error": "Telemetry ID 1 not found"}}
-    },
-}
-
-CONFLICT = {
-    "description": "Duplicate telemetry timestamp",
-    "content": {
-        "application/json": {
-            "example": {
-                "error": "Duplicate telemetry timestamp",
-                "details": "Telemetry for device ID 550e8400-e29b-41d4-a716-446655440000 at ts 1717488000000 already exists",
-            }
-        }
-    },
-}
-
+RECORD_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+DEFAULT_START_MONTH = "2026-01"
+DEFAULT_END_MONTH = "2026-12"
 
 def validation_error(message: str):
     raise HTTPException(
@@ -69,33 +29,34 @@ def validation_error(message: str):
 
 
 def get_device(db: Session, device_id: UUID):
-    device_id = str(device_id)
-    device = db.query(Device).filter(Device.id == device_id).first()
+    normalized_device_id = str(device_id)
+    device = db.query(Device).filter(Device.id == normalized_device_id).first()
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"Device ID {device_id} not found"},
+            detail={"error": f"Device ID {normalized_device_id} not found"},
         )
     return device
 
 
-def get_telemetry(db: Session, telemetry_id: int):
-    telemetry = (
-        db.query(DeviceTelemetry)
-        .filter(DeviceTelemetry.id == telemetry_id)
-        .first()
-    )
-    if telemetry is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"Telemetry ID {telemetry_id} not found"},
-        )
-    return telemetry
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def telemetry_response(telemetry: DeviceTelemetry, device: Device):
+def normalize_device_uuid(value) -> UUID:
+    if isinstance(value, UUID):
+        return value
+
+    return UUID(str(value))
+
+
+def normalize_device_id(value) -> str:
+    return str(value)
+
+
+def telemetry_response(telemetry, device: Device):
     return {
-        "device_id": device.id,
+        "device_id": normalize_device_id(device.id),
         "deviceName": device.name,
         "deviceType": device.type,
         "data": {
@@ -106,26 +67,14 @@ def telemetry_response(telemetry: DeviceTelemetry, device: Device):
     }
 
 
-def telemetry_item(telemetry: DeviceTelemetry):
-    return {
-        "ts": telemetry.ts,
-        "temperature": telemetry.temperature,
-        "humidity": telemetry.humidity,
-    }
-
-
-def is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 @devices_router.post(
     "/{device_id}/telemetry",
     name="Create Device Telemetry",
-    description="Mencatat data telemetry device.",
+    description="Mencatat data telemetry device ke Cassandra.",
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {
-            "description": "Telemetry successfully recorded",
+            "description": "Created",
             "content": {
                 "application/json": {
                     "example": {
@@ -135,7 +84,7 @@ def is_number(value):
                             "deviceName": "Sensor-Suhu",
                             "deviceType": "PM2120",
                             "data": {
-                                "ts": 1717488000000,
+                                "ts": "generated_epoch_ms",
                                 "temperature": 25.5,
                                 "humidity": 60.0,
                             },
@@ -144,74 +93,59 @@ def is_number(value):
                 }
             },
         },
-        400: bad_request_example(
-            "Attributes 'values.temperature' and 'values.humidity' must be numbers"
-        ),
-        404: DEVICE_NOT_FOUND,
-        409: CONFLICT,
-        500: SERVER_ERROR,
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Attributes 'values.temperature' and 'values.humidity' must be numbers",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Device Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def create_telemetry(
     device_id: UUID,
     payload: TelemetryCreate,
     db: Session = Depends(get_db),
+    telemetry_repository: CassandraTelemetryRepository = Depends(get_telemetry_repository),
 ):
-    values = payload.values.model_dump() if payload.values else {}
-    temperature = values.get("temperature")
-    humidity = values.get("humidity")
+    values = payload.values
+    telemetry_ts = int(time() * 1000)
+    temperature = values.temperature if values else None
+    humidity = values.humidity if values else None
 
     if not is_number(temperature) or not is_number(humidity):
-        validation_error(
-            "Attributes 'values.temperature' and 'values.humidity' must be numbers"
-        )
+        validation_error("Attributes 'values.temperature' and 'values.humidity' must be numbers")
 
     device = get_device(db, device_id)
-    ts = int(time.time() * 1000)
-
-    duplicate = (
-        db.query(DeviceTelemetry)
-        .filter(
-            DeviceTelemetry.device_id == device.id,
-            DeviceTelemetry.ts == ts,
-        )
-        .first()
+    telemetry = await run_in_threadpool(
+        telemetry_repository.insert,
+        device_id=normalize_device_uuid(device.id),
+        ts=telemetry_ts,
+        temperature=float(temperature),
+        humidity=float(humidity),
     )
-    if duplicate:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "Duplicate telemetry timestamp",
-                "details": f"Telemetry for device ID {device.id} at ts {ts} already exists",
-            },
-        )
-
-    telemetry = DeviceTelemetry(
-        device_id=device.id,
-        ts=ts,
-        temperature=temperature,
-        humidity=humidity,
-    )
-
-    try:
-        db.add(telemetry)
-        db.commit()
-        db.refresh(telemetry)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "Duplicate telemetry timestamp",
-                "details": f"Telemetry for device ID {device.id} at ts {ts} already exists",
-            },
-        )
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "Internal server error"},
-        )
 
     return {
         "message": "Telemetry successfully recorded",
@@ -222,10 +156,10 @@ async def create_telemetry(
 @devices_router.get(
     "/{device_id}/telemetry",
     name="Get Device Telemetry",
-    description="Mengambil seluruh telemetry milik satu device.",
+    description="Mengambil telemetry device dari Cassandra berdasarkan rentang bulan.",
     responses={
         200: {
-            "description": "Success retrieving telemetry",
+            "description": "OK",
             "content": {
                 "application/json": {
                     "example": {
@@ -235,53 +169,111 @@ async def create_telemetry(
                         "deviceType": "PM2120",
                         "data": [
                             {
-                                "ts": 1717488000000,
-                                "temperature": 25.5,
-                                "humidity": 60.0,
-                            },
-                            {
-                                "ts": 1717488060000,
+                                "ts": "generated_epoch_ms",
                                 "temperature": 25.7,
                                 "humidity": 59.5,
+                            },
+                            {
+                                "ts": "generated_epoch_ms",
+                                "temperature": 25.5,
+                                "humidity": 60.0,
                             },
                         ],
                     }
                 }
             },
         },
-        400: bad_request_example("Device ID must be a valid UUID"),
-        404: DEVICE_NOT_FOUND,
-        500: SERVER_ERROR,
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Query parameter 'start_month' and 'end_month' must use YYYY-MM format",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Device Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def list_telemetry(
     device_id: UUID,
+    start_month: str | None = Query(default=DEFAULT_START_MONTH),
+    end_month: str | None = Query(default=DEFAULT_END_MONTH),
     db: Session = Depends(get_db),
+    telemetry_repository: CassandraTelemetryRepository = Depends(get_telemetry_repository),
 ):
     device = get_device(db, device_id)
-    telemetries = (
-        db.query(DeviceTelemetry)
-        .filter(DeviceTelemetry.device_id == device.id)
-        .order_by(DeviceTelemetry.ts.desc())
-        .all()
+    normalized_start = start_month or DEFAULT_START_MONTH
+    normalized_end = end_month or DEFAULT_END_MONTH
+
+    if (
+        not RECORD_MONTH_PATTERN.fullmatch(normalized_start)
+        or not RECORD_MONTH_PATTERN.fullmatch(normalized_end)
+        or normalized_start > normalized_end
+    ):
+        validation_error("Query parameter 'start_month' and 'end_month' must use YYYY-MM format")
+
+    start_year, start_month_number = [int(value) for value in normalized_start.split("-")]
+    end_year, end_month_number = [int(value) for value in normalized_end.split("-")]
+    months = []
+    year = start_year
+    month = start_month_number
+
+    while (year, month) <= (end_year, end_month_number):
+        months.append(f"{year:04d}-{month:02d}")
+        month += 1
+        if month > 12:
+            year += 1
+            month = 1
+
+    telemetries = await run_in_threadpool(
+        telemetry_repository.find_by_months,
+        device_id=normalize_device_uuid(device.id),
+        months=months,
     )
 
     return {
         "message": "Success retrieving telemetry",
-        "device_id": device.id,
+        "device_id": normalize_device_id(device.id),
         "deviceName": device.name,
         "deviceType": device.type,
-        "data": [telemetry_item(telemetry) for telemetry in telemetries],
+        "data": [
+            {
+                "ts": telemetry.ts,
+                "temperature": telemetry.temperature,
+                "humidity": telemetry.humidity,
+            }
+            for telemetry in telemetries
+        ],
     }
 
 
 @devices_router.get(
     "/{device_id}/telemetry/latest",
     name="Get Latest Device Telemetry",
-    description="Mengambil telemetry terbaru milik satu device.",
+    description="Mengambil telemetry terbaru milik satu device dari Cassandra.",
     responses={
         200: {
-            "description": "Latest telemetry found",
+            "description": "OK",
             "content": {
                 "application/json": {
                     "example": {
@@ -291,7 +283,7 @@ async def list_telemetry(
                             "deviceName": "Sensor-Suhu",
                             "deviceType": "PM2120",
                             "data": {
-                                "ts": 1717488000000,
+                                "ts": "generated_epoch_ms",
                                 "temperature": 25.5,
                                 "humidity": 60.0,
                             },
@@ -300,60 +292,78 @@ async def list_telemetry(
                 }
             },
         },
-        400: bad_request_example("Device ID must be a valid UUID"),
-        404: DEVICE_NOT_FOUND,
-        500: SERVER_ERROR,
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Device ID must be a valid UUID",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Device or Telemetry Not Found",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "deviceNotFound": {
+                            "summary": "Device not found",
+                            "value": {
+                                "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                            },
+                        },
+                        "telemetryNotFound": {
+                            "summary": "Telemetry not found",
+                            "value": {
+                                "error": "Telemetry for device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def latest_telemetry(
     device_id: UUID,
     db: Session = Depends(get_db),
+    telemetry_repository: CassandraTelemetryRepository = Depends(get_telemetry_repository),
 ):
     device = get_device(db, device_id)
-    telemetry = (
-        db.query(DeviceTelemetry)
-        .filter(DeviceTelemetry.device_id == device.id)
-        .order_by(DeviceTelemetry.ts.desc())
-        .first()
+    start_year, start_month_number = [int(part) for part in DEFAULT_START_MONTH.split("-")]
+    year, month = [int(part) for part in DEFAULT_END_MONTH.split("-")]
+    months = []
+
+    while (year, month) >= (start_year, start_month_number):
+        months.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month < 1:
+            year -= 1
+            month = 12
+
+    telemetry = await run_in_threadpool(
+        telemetry_repository.find_latest,
+        device_id=normalize_device_uuid(device.id),
+        months=months,
     )
 
     if telemetry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"Telemetry for device ID {device.id} not found"},
+            detail={"error": f"Telemetry for device ID {normalize_device_id(device.id)} not found"},
         )
 
     return {
         "message": "Latest telemetry found",
         "data": telemetry_response(telemetry, device),
     }
-
-
-@telemetry_router.delete(
-    "/{telemetry_id}",
-    name="Delete Telemetry",
-    description="Menghapus data telemetry berdasarkan ID transaksi.",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        204: {"description": "Telemetry deleted"},
-        400: bad_request_example("Telemetry ID must be a valid number"),
-        404: TELEMETRY_NOT_FOUND,
-        500: SERVER_ERROR,
-    },
-)
-async def delete_telemetry(
-    telemetry_id: int,
-    db: Session = Depends(get_db),
-):
-    telemetry = get_telemetry(db, telemetry_id)
-
-    try:
-        db.delete(telemetry)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "Internal server error"},
-        )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

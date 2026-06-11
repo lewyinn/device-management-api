@@ -1,26 +1,41 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
-from app.core.database import Base, engine
-from app.routers import devices_router, device_telemetry_router, telemetry_router
+from app.core.cassandra import connect_cassandra, shutdown_cassandra
+from app.core.database import check_sql_database, close_sql_database, sync_sql_database
+from app.routers import devices_router, device_telemetry_router
 
-Base.metadata.create_all(bind=engine)
 
 API_PREFIX = "/api/v1"
 SERVER_URL = "http://localhost:8000/api/v1"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        check_sql_database()
+        sync_sql_database()
+        connect_cassandra()
+        yield
+    finally:
+        shutdown_cassandra()
+        close_sql_database()
+
 
 app = FastAPI(
     title="Device Management API",
     description=f"API untuk mengelola perangkat IoT.",
     version="1.0.0",
     docs_url="/api-docs",
+    lifespan=lifespan,
 )
 
 app.include_router(devices_router)
 app.include_router(device_telemetry_router)
-app.include_router(telemetry_router)
 
 
 @app.exception_handler(HTTPException)
@@ -40,10 +55,10 @@ async def handle_validation_error(request: Request, error: RequestValidationErro
         field = error.errors()[0]["loc"][-1]
         if field == "device_id":
             message = "Device ID must be a valid UUID"
-        elif field == "telemetry_id":
-            message = "Telemetry ID must be a valid number"
         elif field in ["page", "limit"]:
             message = "Query parameter 'page' or 'limit' must be a valid number"
+        elif field in ["start_month", "end_month"]:
+            message = "Query parameter 'start_month' and 'end_month' must use YYYY-MM format"
         elif field in ["name", "type", "status"]:
             message = f"Attribute '{field}' is required"
 

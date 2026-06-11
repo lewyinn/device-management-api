@@ -23,15 +23,20 @@ http://localhost:8000/api-docs
 
 ## Database
 
-Default database memakai PostgreSQL:
+Backend memakai dua database:
+
+```text
+PostgreSQL = menyimpan master data device
+Cassandra  = menyimpan telemetry/time-series data
+```
+
+Default PostgreSQL dipakai untuk data device:
 
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/device_db
 ```
 
-Artinya data disimpan di PostgreSQL di port 5432 dengan nama database `device_db`.
-
-Connection pool juga bisa diatur lewat `.env`:
+Connection pool PostgreSQL juga bisa diatur lewat `.env`:
 
 ```env
 DB_POOL_SIZE=10
@@ -61,6 +66,33 @@ Semua konfigurasi database ada di:
 app/core/database.py
 ```
 
+Telemetry disimpan di Cassandra memakai table:
+
+```sql
+CREATE TABLE IF NOT EXISTS device_telemetries (
+    device_id uuid,
+    record_month text,
+    ts bigint,
+    temperature double,
+    humidity double,
+    PRIMARY KEY ((device_id, record_month), ts)
+) WITH CLUSTERING ORDER BY (ts DESC);
+```
+
+Config Cassandra bisa diatur lewat `.env`:
+
+```env
+CASSANDRA_CONTACT_POINTS=127.0.0.1
+CASSANDRA_LOCAL_DATACENTER=datacenter1
+CASSANDRA_KEYSPACE=device_management
+```
+
+Semua konfigurasi Cassandra ada di:
+
+```text
+app/core/cassandra.py
+```
+
 ## Endpoint Utama
 
 ```text
@@ -72,10 +104,22 @@ PATCH  /api/v1/devices/{device_id}
 DELETE /api/v1/devices/{device_id}
 
 POST   /api/v1/devices/{device_id}/telemetry
-GET    /api/v1/devices/{device_id}/telemetry
+GET    /api/v1/devices/{device_id}/telemetry?start_month=2026-01&end_month=2026-12
 GET    /api/v1/devices/{device_id}/telemetry/latest
-DELETE /api/v1/telemetry/{telemetry_id}
 ```
 
 `device_id` memakai UUID.
-`ts` pada telemetry memakai Format Unix Timestamp (Epoch Time)
+`ts` dibuat otomatis oleh API saat request diterima, lalu disimpan di Cassandra dan dikembalikan sebagai Unix epoch milliseconds.
+`record_month` dihitung dari nilai `ts`.
+Default query history telemetry adalah `start_month=2026-01` dan `end_month=2026-12`.
+
+Contoh payload telemetry:
+
+```json
+{
+  "values": {
+    "temperature": 28.5,
+    "humidity": 75.2
+  }
+}
+```

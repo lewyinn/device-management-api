@@ -163,10 +163,10 @@
           "response": []
         }
       ],
-      "description": "### Deskripsi\n\nREST API sederhana untuk mengelola device IoT dan telemetry.\n\nBase URL:\n\nhttp://localhost:8000/api/v1\n\nTidak perlu token atau API key.\n\n### Endpoint utama\n\n| Method | Endpoint | Deskripsi |\n| --- | --- | --- |\n| POST | /devices | Membuat device baru. |\n| GET | /devices?page=1&limit=10 | Mengambil daftar device dengan pagination. |\n| GET | /devices/{device_id} | Mengambil detail device berdasarkan UUID. |\n| PUT | /devices/{device_id} | Update semua field device. |\n| PATCH | /devices/{device_id} | Update sebagian field device. |\n| DELETE | /devices/{device_id} | Menghapus device. |\n| POST | /devices/{device_id}/telemetry | Membuat telemetry untuk device. |\n| GET | /devices/{device_id}/telemetry | Mengambil telemetry device. |\n| GET | /devices/{device_id}/telemetry/latest | Mengambil telemetry terbaru. |\n| DELETE | /telemetry/{telemetry_id} | Menghapus telemetry. |\n\nCatatan:\n\n- device_id memakai UUID.\n- Database default SQLite in-memory, jadi data hilang saat server restart."
+      "description": "### Deskripsi\n\nREST API sederhana untuk mengelola device IoT dan telemetry.\n\nBase URL:\n\nhttp://localhost:8000/api/v1\n\nTidak perlu token atau API key.\n\n### Endpoint utama\n\n| Method | Endpoint | Deskripsi |\n| --- | --- | --- |\n| POST | /devices | Membuat device baru. |\n| GET | /devices?page=1&limit=10 | Mengambil daftar device dengan pagination. |\n| GET | /devices/{device_id} | Mengambil detail device berdasarkan UUID. |\n| PUT | /devices/{device_id} | Update semua field device. |\n| PATCH | /devices/{device_id} | Update sebagian field device. |\n| DELETE | /devices/{device_id} | Menghapus device. |\n| POST | /devices/{device_id}/telemetry | Membuat telemetry untuk device ke Cassandra. |\n| GET | /devices/{device_id}/telemetry?start_month=2026-01&end_month=2026-12 | Mengambil telemetry device dari Cassandra. |\n| GET | /devices/{device_id}/telemetry/latest | Mengambil telemetry terbaru. |\n\nCatatan:\n\n- device_id memakai UUID.\n- Device disimpan di PostgreSQL.\n- Telemetry disimpan di Cassandra table device_telemetries."
     },
     {
-      "name": "DeviceTelemetry",
+      "name": "Telemetry",
       "item": [
         {
           "name": "POST - Create Telemetry",
@@ -218,7 +218,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/devices/{{device_id}}/telemetry",
+              "raw": "{{base_url}}/devices/{{device_id}}/telemetry?start_month=2026-01&end_month=2026-12",
               "host": [
                 "{{base_url}}"
               ],
@@ -226,6 +226,16 @@
                 "devices",
                 "{{device_id}}",
                 "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "start_month",
+                  "value": "2026-01"
+                },
+                {
+                  "key": "end_month",
+                  "value": "2026-12"
+                }
               ]
             }
           },
@@ -250,46 +260,6 @@
             }
           },
           "response": []
-        },
-        {
-          "name": "DELETE - Delete Telemetry by ID",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/telemetry/{{telemetry_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "telemetry",
-                "{{telemetry_id}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE - Delete data by ID",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": ""
-            },
-            "url": {
-              "raw": "{{base_url}}/devices/{{device_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "devices",
-                "{{device_id}}"
-              ]
-            }
-          },
-          "response": []
         }
       ]
     }
@@ -302,10 +272,6 @@
     {
       "key": "device_id",
       "value": ""
-    },
-    {
-      "key": "telemetry_id",
-      "value": "1"
     }
   ]
 }

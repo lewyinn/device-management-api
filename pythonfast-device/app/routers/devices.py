@@ -1,54 +1,15 @@
 from math import ceil
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models import Device
-from app.schemas import DeviceCreate, DeviceUpdate
+from app.schemas import DeviceCreate, DevicePatch, DeviceUpdate
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
 
-def bad_request_example(details: str):
-    return {
-        "description": "Bad Request",
-        "content": {
-            "application/json": {
-                "example": {
-                    "error": "Validation failed",
-                    "details": details,
-                }
-            }
-        },
-    }
-
-
-BAD_REQUEST = bad_request_example("Attribute 'name' is required")
-
-NOT_FOUND = {
-    "description": "Not Found",
-    "content": {
-        "application/json": {"example": {"error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"}}
-    },
-}
-
-SERVER_ERROR = {
-    "description": "Internal Server Error",
-    "content": {
-        "application/json": {"example": {"error": "Internal server error"}}
-    },
-}
-
-COMMON_ERRORS = {
-    400: BAD_REQUEST,
-    500: SERVER_ERROR,
-}
-
-DETAIL_ERRORS = {
-    **COMMON_ERRORS,
-    404: NOT_FOUND,
-}
 
 def device_response(device: Device):
     return {
@@ -58,11 +19,6 @@ def device_response(device: Device):
         "status": device.status,
     }
 
-def validation_error(message: str):
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"error": "Validation failed", "details": message},
-    )
 
 def get_device(db: Session, device_id: UUID):
     device_id = str(device_id)
@@ -77,15 +33,23 @@ def get_device(db: Session, device_id: UUID):
 
 def check_status(device_status: str):
     if device_status not in ["active", "inactive"]:
-        validation_error("Status must be 'active' or 'inactive'")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Validation failed",
+                "details": "Status must be 'active' or 'inactive'",
+            },
+        )
+
 
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
+    name="Create Device",
     description="Mendaftarkan perangkat baru ke dalam sistem.",
     responses={
         201: {
-            "description": "Device berhasil terdaftar",
+            "description": "Created",
             "content": {
                 "application/json": {
                     "example": {
@@ -100,26 +64,50 @@ def check_status(device_status: str):
                 }
             },
         },
-        **COMMON_ERRORS,
-    }
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Attribute 'name' is required",
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
+    },
 )
 async def create_device(
     payload: DeviceCreate,
     db: Session = Depends(get_db),
 ):
-    if not payload.name:
-        validation_error("Attribute 'name' is required")
-    if not payload.type:
-        validation_error("Attribute 'type' is required")
-
+    name = payload.name
+    device_type = payload.type
     device_status = payload.status or "active"
+
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Validation failed", "details": "Attribute 'name' is required"},
+        )
+    if not device_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Validation failed", "details": "Attribute 'type' is required"},
+        )
+
     check_status(device_status)
 
-    device = Device(
-        name=payload.name,
-        type=payload.type,
-        status=device_status,
-    )
+    device = Device(name=name, type=device_type, status=device_status)
+
     try:
         db.add(device)
         db.commit()
@@ -143,8 +131,8 @@ async def create_device(
     description="Mengambil daftar seluruh perangkat dengan pagination.",
     responses={
         200: {
-            "description": "Success retrieving devices",
-                "content": {
+            "description": "OK",
+            "content": {
                 "application/json": {
                     "example": {
                         "message": "Success retrieving devices",
@@ -166,10 +154,25 @@ async def create_device(
                 }
             },
         },
-        **COMMON_ERRORS,
-        400: bad_request_example(
-            "Query parameter 'page' or 'limit' must be a valid number"
-        ),
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Query parameter 'page' or 'limit' must be a valid number",
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def list_devices(
@@ -206,7 +209,7 @@ async def list_devices(
     description="Mengambil detail satu perangkat berdasarkan ID.",
     responses={
         200: {
-            "description": "Device found",
+            "description": "OK",
             "content": {
                 "application/json": {
                     "example": {
@@ -221,8 +224,35 @@ async def list_devices(
                 }
             },
         },
-        **DETAIL_ERRORS,
-        400: bad_request_example("Device ID must be a valid UUID"),
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Device ID must be a valid UUID",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def detail_device(
@@ -242,7 +272,7 @@ async def detail_device(
     description="Mengubah seluruh data atribut perangkat sekaligus. Semua atribut name, type, dan status wajib dikirimkan.",
     responses={
         200: {
-            "description": "Device data fully updated successfully",
+            "description": "OK",
             "content": {
                 "application/json": {
                     "example": {
@@ -257,10 +287,35 @@ async def detail_device(
                 }
             },
         },
-        **DETAIL_ERRORS,
-        400: bad_request_example(
-            "All attributes (name, type, status) are required for PUT method"
-        ),
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "All attributes (name, type, status) are required for PUT method",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def update_device(
@@ -268,19 +323,26 @@ async def update_device(
     payload: DeviceUpdate,
     db: Session = Depends(get_db),
 ):
-    if not payload.name or not payload.type or not payload.status:
-        validation_error(
-            "All attributes (name, type, status) are required for PUT method"
+    name = payload.name
+    device_type = payload.type
+    device_status = payload.status
+
+    if not name or not device_type or not device_status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Validation failed",
+                "details": "All attributes (name, type, status) are required for PUT method",
+            },
         )
 
-    check_status(payload.status)
-
+    check_status(device_status)
     device = get_device(db, device_id)
 
     try:
-        device.name = payload.name
-        device.type = payload.type
-        device.status = payload.status
+        device.name = name
+        device.type = device_type
+        device.status = device_status
         db.commit()
         db.refresh(device)
     except Exception:
@@ -302,11 +364,11 @@ async def update_device(
     description="Mengubah status atau sebagian data perangkat.",
     responses={
         200: {
-            "description": "Device status updated successfully",
+            "description": "OK",
             "content": {
                 "application/json": {
                     "example": {
-                        "message": "Device partially updated successfully",
+                        "message": "Device status updated successfully",
                         "data": {
                             "id": "550e8400-e29b-41d4-a716-446655440000",
                             "name": "Sensor-Suhu",
@@ -317,44 +379,66 @@ async def update_device(
                 }
             },
         },
-        **DETAIL_ERRORS,
-        400: bad_request_example("At least one field must be provided"),
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "At least one field must be provided",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def patch_device(
     device_id: UUID,
-    payload: dict = Body(
-        ...,
-        openapi_examples={
-            "statusOnly": {
-                "summary": "Update status only",
-                "value": {
-                    "status": "active",
-                },
-            }
-        },
-    ),
+    payload: DevicePatch,
     db: Session = Depends(get_db),
 ):
-    data = {
-        key: payload[key]
-        for key in ["name", "type", "status"]
-        if key in payload
-    }
+    data = payload.model_dump(exclude_unset=True)
 
     if not data:
-        validation_error("At least one field must be provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Validation failed", "details": "At least one field must be provided"},
+        )
 
     device = get_device(db, device_id)
 
     if "name" in data:
         if not data["name"]:
-            validation_error("Attribute 'name' is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "Validation failed", "details": "Attribute 'name' is required"},
+            )
         device.name = data["name"]
 
     if "type" in data:
         if not data["type"]:
-            validation_error("Attribute 'type' is required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "Validation failed", "details": "Attribute 'type' is required"},
+            )
         device.type = data["type"]
 
     if "status" in data:
@@ -383,9 +467,36 @@ async def patch_device(
     description="Menghapus perangkat dari sistem.",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
-        204: {"description": "Device deleted"},
-        **DETAIL_ERRORS,
-        400: bad_request_example("Device ID must be a valid UUID"),
+        204: {"description": "No Content"},
+        400: {
+            "description": "Bad Request",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Validation failed",
+                        "details": "Device ID must be a valid UUID",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Not Found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Internal server error"}
+                }
+            },
+        },
     },
 )
 async def delete_device(
@@ -393,6 +504,7 @@ async def delete_device(
     db: Session = Depends(get_db),
 ):
     device = get_device(db, device_id)
+
     try:
         db.delete(device)
         db.commit()
@@ -402,4 +514,5 @@ async def delete_device(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": "Internal server error"},
         )
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
