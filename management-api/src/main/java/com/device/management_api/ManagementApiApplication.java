@@ -39,7 +39,6 @@ public class ManagementApiApplication {
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}");
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}/telemetry");
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}/telemetry/latest");
-			addCleanPath(openApi, paths, API_PREFIX + "/telemetry/{telemetry_id}");
 			openApi.getPaths().forEach((path, pathItem) -> {
 				String cleanPath = path.startsWith(API_PREFIX)
 						? path.substring(API_PREFIX.length())

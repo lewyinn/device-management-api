@@ -1,7 +1,6 @@
 package com.device.management_api.service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
@@ -10,6 +9,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import com.device.management_api.entity.Device;
+import com.device.management_api.dto.device.CreateDeviceRequest;
+import com.device.management_api.dto.device.PatchDeviceRequest;
+import com.device.management_api.dto.device.UpdateDeviceRequest;
 import com.device.management_api.exception.ApiException;
 import com.device.management_api.repository.DeviceRepository;
 
@@ -26,21 +28,14 @@ public class DeviceService {
     }
 
     @Transactional
-    public Device create(Map<String, String> request) {
-        String name = value(request, "name");
-        String type = value(request, "type");
-        String status = value(request, "status");
-
-        if (isBlank(name)) validationError("Attribute 'name' is required");
-        if (isBlank(type)) validationError("Attribute 'type' is required");
-
-        String deviceStatus = isBlank(status) ? "active" : status;
+    public Device create(CreateDeviceRequest request) {
+        String deviceStatus = isBlank(request.status()) ? "active" : request.status();
         validateStatus(deviceStatus);
 
         Device device = new Device(
                 UUID.randomUUID(),
-                name,
-                type,
+                request.name(),
+                request.type(),
                 deviceStatus
         );
 
@@ -65,24 +60,16 @@ public class DeviceService {
     }
 
     @Transactional
-    public Device update(String deviceId, Map<String, String> request) {
+    public Device update(String deviceId, UpdateDeviceRequest request) {
         UUID id = parseDeviceId(deviceId);
-
-        String name = value(request, "name");
-        String type = value(request, "type");
-        String status = value(request, "status");
-
-        if (isBlank(name) || isBlank(type) || isBlank(status)) {
-            validationError("All attributes (name, type, status) are required for PUT method");
-        }
-        validateStatus(status);
+        validateStatus(request.status());
 
         getDevice(deviceId);
-        return deviceRepository.save(new Device(id, name, type, status));
+        return deviceRepository.save(new Device(id, request.name(), request.type(), request.status()));
     }
 
     @Transactional
-    public Device patch(String deviceId, Map<String, String> request) {
+    public Device patch(String deviceId, PatchDeviceRequest request) {
         Device device = getDevice(deviceId);
         if (request == null || request.isEmpty()) {
             validationError("At least one field must be provided");
@@ -92,18 +79,18 @@ public class DeviceService {
         String type = device.type();
         String status = device.status();
 
-        if (request != null && request.containsKey("name")) {
-            name = request.get("name");
+        if (request != null && request.name() != null) {
+            name = request.name();
             if (isBlank(name)) validationError("Attribute 'name' is required");
         }
 
-        if (request != null && request.containsKey("type")) {
-            type = request.get("type");
+        if (request != null && request.type() != null) {
+            type = request.type();
             if (isBlank(type)) validationError("Attribute 'type' is required");
         }
 
-        if (request != null && request.containsKey("status")) {
-            status = request.get("status");
+        if (request != null && request.status() != null) {
+            status = request.status();
             validateStatus(status);
         }
 
@@ -150,11 +137,6 @@ public class DeviceService {
         if (!"active".equals(status) && !"inactive".equals(status)) {
             validationError("Status must be 'active' or 'inactive'");
         }
-    }
-
-    private String value(Map<String, String> request, String key) {
-        if (request == null) return null;
-        return request.get(key);
     }
 
     private boolean isBlank(String value) {

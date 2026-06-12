@@ -20,8 +20,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.device.management_api.repository.CassandraTelemetryRepository;
 import com.device.management_api.repository.DeviceRepository;
-import com.device.management_api.repository.DeviceTelemetryRepository;
+import com.device.management_api.service.DeviceTelemetryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -35,7 +36,10 @@ class DeviceControllerTests {
     private DeviceRepository deviceRepository;
 
     @Autowired
-    private DeviceTelemetryRepository telemetryRepository;
+    private CassandraTelemetryRepository telemetryRepository;
+
+    @Autowired
+    private DeviceTelemetryService telemetryService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final List<UUID> createdDeviceIds = new ArrayList<>();
@@ -44,8 +48,7 @@ class DeviceControllerTests {
     @AfterEach
     void cleanTestDataOnly() {
         for (UUID deviceId : createdDeviceIds) {
-            telemetryRepository.findAllByDevice_IdOrderByTsDesc(deviceId)
-                    .forEach(telemetry -> telemetryRepository.deleteById(telemetry.id()));
+            telemetryRepository.deletePartitions(deviceId, telemetryService.monthsBetween("2025-01", "2026-12"));
 
             if (deviceRepository.existsById(deviceId)) {
                 deviceRepository.deleteById(deviceId);
@@ -59,6 +62,17 @@ class DeviceControllerTests {
         mockMvc.perform(get("/api/v1/devices?page=abc&limit=10"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.details").value("Query parameter 'page' or 'limit' must be a valid number"));
+
+        mockMvc.perform(post("/api/v1/devices")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "DHT22",
+                                  "status": "active"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details").value("Attribute 'name' is required"));
 
         MvcResult createResult = mockMvc.perform(post("/api/v1/devices")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -162,11 +176,21 @@ class DeviceControllerTests {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.message").value("Telemetry successfully recorded"))
-                .andExpect(jsonPath("$.data.device_id").value(deviceId));
+                .andExpect(jsonPath("$.data.device_id").value(deviceId))
+                .andExpect(jsonPath("$.data.data.ts").isNumber());
 
-        Integer telemetryId = telemetryRepository.findFirstByDevice_IdOrderByTsDesc(deviceUuid)
-                .orElseThrow()
-                .id();
+        mockMvc.perform(post("/api/v1/devices/{device_id}/telemetry", deviceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "values": {
+                                    "temperature": null,
+                                    "humidity": 75.2
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details").value("Attributes 'values.temperature' and 'values.humidity' must be numbers"));
 
         mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry", deviceId))
                 .andExpect(status().isOk())
@@ -174,17 +198,27 @@ class DeviceControllerTests {
                 .andExpect(jsonPath("$.device_id").value(deviceId))
                 .andExpect(jsonPath("$.data.length()").value(1));
 
+        mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry?start_month=2026-01&end_month=2026-12", deviceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1));
+
+        mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry?start_month=2026-01-01&end_month=2026-12", deviceId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details").value("Query parameter 'start_month' and 'end_month' must use YYYY-MM format"));
+
+        mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry?start_month=2025-01&end_month=2026-12", deviceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1));
+
         mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry/latest", deviceId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Latest telemetry found"))
                 .andExpect(jsonPath("$.data.device_id").value(deviceId));
 
-        mockMvc.perform(delete("/api/v1/telemetry/not-number"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.details").value("Telemetry ID must be a valid number"));
+        telemetryRepository.deletePartitions(deviceUuid, telemetryService.monthsBetween("2025-01", "2026-12"));
 
-        mockMvc.perform(delete("/api/v1/telemetry/{telemetry_id}", telemetryId))
-                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/v1/telemetry/1"))
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/v1/devices/{device_id}/telemetry/latest", deviceId))
                 .andExpect(status().isNotFound())

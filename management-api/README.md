@@ -2,6 +2,13 @@
 
 REST API sederhana untuk data device IoT dan telemetry.
 
+Arsitektur database:
+
+```text
+PostgreSQL / SQLite + JPA = data transactional devices
+Cassandra               = data time-series device_telemetries
+```
+
 ## Cara Menjalankan
 
 ```bash
@@ -28,7 +35,7 @@ http://localhost:8080/openapi.json
 
 ## Database
 
-Default database memakai SQLite in-memory dan ORM Hibernate/JPA:
+Default SQL database memakai SQLite in-memory dan ORM Hibernate/JPA:
 
 ```text
 DATABASE_URL=jdbc:sqlite:file:management-api?mode=memory&cache=shared
@@ -59,6 +66,33 @@ DATABASE_PASSWORD=your_password
 DATABASE_DRIVER=org.postgresql.Driver
 DATABASE_DIALECT=org.hibernate.dialect.PostgreSQLDialect
 DDL_AUTO=update
+```
+
+Untuk learning/dev, `DDL_AUTO=update` masih boleh dipakai. Untuk production, gunakan:
+
+```env
+DDL_AUTO=validate
+```
+
+Telemetry disimpan di Cassandra. App akan membuat keyspace dan table jika belum ada:
+
+```env
+CASSANDRA_CONTACT_POINTS=127.0.0.1:9042
+CASSANDRA_LOCAL_DATACENTER=datacenter1
+CASSANDRA_KEYSPACE=device_management
+```
+
+Table Cassandra:
+
+```sql
+CREATE TABLE IF NOT EXISTS device_telemetries (
+    device_id uuid,
+    record_month text,
+    ts bigint,
+    temperature double,
+    humidity double,
+    PRIMARY KEY ((device_id, record_month), ts)
+) WITH CLUSTERING ORDER BY (ts DESC);
 ```
 
 Connection pool HikariCP juga bisa diatur lewat `.env`:
@@ -100,10 +134,9 @@ PATCH  /api/v1/devices/{device_id}
 DELETE /api/v1/devices/{device_id}
 
 POST   /api/v1/devices/{device_id}/telemetry
-GET    /api/v1/devices/{device_id}/telemetry
+GET    /api/v1/devices/{device_id}/telemetry?start_month=2026-01&end_month=2026-12
 GET    /api/v1/devices/{device_id}/telemetry/latest
-DELETE /api/v1/telemetry/{telemetry_id}
 ```
 
 `device_id` memakai UUID.
-`ts` pada telemetry memakai Format Unix Timestamp (Epoch Time).
+`ts` pada telemetry dibuat otomatis oleh backend dalam format Unix epoch milliseconds.

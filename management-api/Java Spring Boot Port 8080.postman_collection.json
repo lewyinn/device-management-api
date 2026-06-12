@@ -228,7 +228,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/devices/{{device_id}}/telemetry",
+              "raw": "{{base_url}}/devices/{{device_id}}/telemetry?start_month=2026-01&end_month=2026-12",
               "host": [
                 "{{base_url}}"
               ],
@@ -236,6 +236,16 @@
                 "devices",
                 "{{device_id}}",
                 "telemetry"
+              ],
+              "query": [
+                {
+                  "key": "start_month",
+                  "value": "2026-01"
+                },
+                {
+                  "key": "end_month",
+                  "value": "2026-12"
+                }
               ]
             }
           },
@@ -260,27 +270,9 @@
             }
           },
           "response": []
-        },
-        {
-          "name": "DELETE - Delete Telemetry",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/telemetry/{{telemetry_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "telemetry",
-                "{{telemetry_id}}"
-              ]
-            }
-          },
-          "response": []
         }
       ],
-      "description": "Endpoint telemetry device. Jalankan create device lebih dulu agar variable device_id terisi."
+      "description": "Endpoint telemetry device. Telemetry disimpan di Cassandra dan ts dibuat otomatis oleh backend. Jalankan create device lebih dulu agar variable device_id terisi."
     }
   ],
   "variable": [
@@ -291,10 +283,6 @@
     {
       "key": "device_id",
       "value": ""
-    },
-    {
-      "key": "telemetry_id",
-      "value": "1"
     }
   ]
 }

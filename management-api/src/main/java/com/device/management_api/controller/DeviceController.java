@@ -1,10 +1,10 @@
 package com.device.management_api.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -16,10 +16,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.device.management_api.dto.device.CreateDeviceRequest;
+import com.device.management_api.dto.device.DeviceDataResponse;
+import com.device.management_api.dto.device.DeviceListResponse;
+import com.device.management_api.dto.device.DeviceResponse;
+import com.device.management_api.dto.device.MetaResponse;
+import com.device.management_api.dto.device.PatchDeviceRequest;
+import com.device.management_api.dto.device.UpdateDeviceRequest;
 import com.device.management_api.entity.Device;
-import com.device.management_api.exception.GlobalExceptionHandler.ErrorResponse;
+import com.device.management_api.exception.ApiException;
 import com.device.management_api.service.DeviceService;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +35,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.validation.Valid;
 
 @RestController
 @Tag(name = "Device")
@@ -65,7 +73,7 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public ResponseEntity<DeviceDataResponse> create(
+    public ResponseEntity<?> create(
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
                     content = @Content(
@@ -79,11 +87,22 @@ public class DeviceController {
                                     """)
                     )
             )
-            @RequestBody Map<String, String> request) {
-        Device device = deviceService.create(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                new DeviceDataResponse("Device successfully registered", toResponse(device))
-        );
+            @Valid @RequestBody CreateDeviceRequest request,
+            BindingResult validationResult) {
+        if (validationResult.hasErrors()) {
+            return validationError(validationResult);
+        }
+
+        try {
+            Device device = deviceService.create(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(
+                    new DeviceDataResponse("Device successfully registered", toResponse(device))
+            );
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     @GetMapping
@@ -119,21 +138,27 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public DeviceListResponse findAll(
+    public ResponseEntity<?> findAll(
             @RequestParam(defaultValue = "1") String page,
             @RequestParam(defaultValue = "10") String limit
     ) {
-        DeviceService.DevicePage result = deviceService.findAll(page, limit);
-        List<DeviceResponse> devices = result.devices()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        try {
+            DeviceService.DevicePage result = deviceService.findAll(page, limit);
+            List<DeviceResponse> devices = result.devices()
+                    .stream()
+                    .map(this::toResponse)
+                    .toList();
 
-        return new DeviceListResponse(
-                "Success retrieving devices",
-                new MetaResponse(result.page(), result.limit(), result.totalData(), result.totalPages()),
-                devices
-        );
+            return ResponseEntity.ok(new DeviceListResponse(
+                    "Success retrieving devices",
+                    new MetaResponse(result.page(), result.limit(), result.totalData(), result.totalPages()),
+                    devices
+            ));
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     @GetMapping("/{device_id}")
@@ -164,9 +189,15 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public DeviceDataResponse findById(@PathVariable("device_id") String deviceId) {
-        Device device = deviceService.findById(deviceId);
-        return new DeviceDataResponse("Device found", toResponse(device));
+    public ResponseEntity<?> findById(@PathVariable("device_id") String deviceId) {
+        try {
+            Device device = deviceService.findById(deviceId);
+            return ResponseEntity.ok(new DeviceDataResponse("Device found", toResponse(device)));
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     @PutMapping("/{device_id}")
@@ -197,7 +228,7 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public DeviceDataResponse update(
+    public ResponseEntity<?> update(
             @PathVariable("device_id") String deviceId,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
@@ -212,10 +243,21 @@ public class DeviceController {
                                     """)
                     )
             )
-            @RequestBody Map<String, String> request
+            @Valid @RequestBody UpdateDeviceRequest request,
+            BindingResult validationResult
     ) {
-        Device device = deviceService.update(deviceId, request);
-        return new DeviceDataResponse("Device data fully updated successfully", toResponse(device));
+        if (validationResult.hasErrors()) {
+            return validationError(validationResult);
+        }
+
+        try {
+            Device device = deviceService.update(deviceId, request);
+            return ResponseEntity.ok(new DeviceDataResponse("Device data fully updated successfully", toResponse(device)));
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     @PatchMapping("/{device_id}")
@@ -246,7 +288,7 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public DeviceDataResponse patch(
+    public ResponseEntity<?> patch(
             @PathVariable("device_id") String deviceId,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
@@ -259,10 +301,16 @@ public class DeviceController {
                                     """)
                     )
             )
-            @RequestBody Map<String, String> request
+            @RequestBody PatchDeviceRequest request
     ) {
-        Device device = deviceService.patch(deviceId, request);
-        return new DeviceDataResponse("Device status updated successfully", toResponse(device));
+        try {
+            Device device = deviceService.patch(deviceId, request);
+            return ResponseEntity.ok(new DeviceDataResponse("Device status updated successfully", toResponse(device)));
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     @DeleteMapping("/{device_id}")
@@ -279,45 +327,40 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public ResponseEntity<Void> delete(@PathVariable("device_id") String deviceId) {
-        deviceService.delete(deviceId);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> delete(@PathVariable("device_id") String deviceId) {
+        try {
+            deviceService.delete(deviceId);
+            return ResponseEntity.noContent().build();
+        } catch (ApiException error) {
+            return apiError(error);
+        } catch (Exception error) {
+            return internalError();
+        }
     }
 
     private DeviceResponse toResponse(Device device) {
         return new DeviceResponse(device.id(), device.name(), device.type(), device.status());
     }
 
-    public record DeviceResponse(
-            String id,
-            String name,
-            String type,
-            String status
-            ) {
-
+    private ResponseEntity<ErrorResponse> validationError(BindingResult validationResult) {
+        String details = validationResult.getFieldErrors().isEmpty()
+                ? "Invalid request payload"
+                : validationResult.getFieldErrors().get(0).getDefaultMessage();
+        return ResponseEntity.badRequest().body(new ErrorResponse("Validation failed", details));
     }
 
-    public record DeviceDataResponse(
-            String message,
-            DeviceResponse data
-            ) {
-
+    private ResponseEntity<ErrorResponse> apiError(ApiException error) {
+        return ResponseEntity.status(error.getStatus()).body(new ErrorResponse(error.getError(), error.getDetails()));
     }
 
-    public record DeviceListResponse(
-            String message,
-            MetaResponse meta,
-            List<DeviceResponse> data
-            ) {
-
+    private ResponseEntity<ErrorResponse> internalError() {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponse("Internal server error", null));
     }
 
-    public record MetaResponse(
-            int page,
-            int limit,
-            @JsonProperty("total_data") long totalData,
-            @JsonProperty("total_pages") int totalPages
-            ) {
-
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ErrorResponse(
+            String error,
+            Object details
+    ) {
     }
 }

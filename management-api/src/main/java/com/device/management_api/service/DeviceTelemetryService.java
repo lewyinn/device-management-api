@@ -1,83 +1,113 @@
 package com.device.management_api.service;
 
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import com.device.management_api.dto.telemetry.CreateTelemetryRequest;
+import com.device.management_api.dto.telemetry.TelemetryReading;
 import com.device.management_api.entity.Device;
-import com.device.management_api.entity.DeviceTelemetry;
 import com.device.management_api.exception.ApiException;
+import com.device.management_api.repository.CassandraTelemetryRepository;
 import com.device.management_api.repository.DeviceRepository;
-import com.device.management_api.repository.DeviceTelemetryRepository;
-
-import org.springframework.transaction.annotation.Transactional;
-
 
 @Service
 public class DeviceTelemetryService {
+    private static final String DEFAULT_START_MONTH = "2026-01";
+    private static final String DEFAULT_END_MONTH = "2026-12";
+
     private final DeviceRepository deviceRepository;
-    private final DeviceTelemetryRepository telemetryRepository;
+    private final CassandraTelemetryRepository telemetryRepository;
 
     public DeviceTelemetryService(
             DeviceRepository deviceRepository,
-            DeviceTelemetryRepository telemetryRepository
+            CassandraTelemetryRepository telemetryRepository
     ) {
         this.deviceRepository = deviceRepository;
         this.telemetryRepository = telemetryRepository;
     }
 
-    @Transactional
-    public TelemetryResult create(String deviceId, Map<String, Object> request) {
+    public TelemetryResult create(String deviceId, CreateTelemetryRequest request) {
         Device device = getDevice(deviceId);
-        Values values = getValues(request);
-
         long ts = System.currentTimeMillis();
-        if (telemetryRepository.existsByDevice_IdAndTs(device.getId(), ts)) {
-            duplicateTelemetry(device.id(), ts);
-        }
+        TelemetryReading telemetry = telemetryRepository.insert(
+                device.getId(),
+                recordMonth(ts),
+                ts,
+                request.values().temperature(),
+                request.values().humidity()
+        );
 
-        try {
-            DeviceTelemetry telemetry = telemetryRepository.save(
-                    new DeviceTelemetry(null, device, ts, values.temperature(), values.humidity())
-            );
-            return new TelemetryResult(device, telemetry);
-        } catch (DataIntegrityViolationException error) {
-            duplicateTelemetry(device.id(), ts);
-            return null;
-        }
+        return new TelemetryResult(device, telemetry);
     }
 
-    public TelemetryListResult findAllByDeviceId(String deviceId) {
+    public TelemetryListResult findAllByDeviceId(String deviceId, String startMonthValue, String endMonthValue) {
         Device device = getDevice(deviceId);
-        List<DeviceTelemetry> telemetries = telemetryRepository.findAllByDevice_IdOrderByTsDesc(device.getId());
+        List<String> months = monthsBetween(
+                defaultMonth(startMonthValue, DEFAULT_START_MONTH),
+                defaultMonth(endMonthValue, DEFAULT_END_MONTH)
+        );
+        List<TelemetryReading> telemetries = telemetryRepository.findByMonths(device.getId(), months);
+
         return new TelemetryListResult(device, telemetries);
     }
 
     public TelemetryResult findLatestByDeviceId(String deviceId) {
         Device device = getDevice(deviceId);
-        DeviceTelemetry telemetry = telemetryRepository.findFirstByDevice_IdOrderByTsDesc(device.getId())
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.NOT_FOUND,
-                        "Telemetry for device ID " + device.id() + " not found",
-                        null
-                ));
+        TelemetryReading telemetry = telemetryRepository.findLatest(device.getId(), latestMonths());
+
+        if (telemetry == null) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "Telemetry for device ID " + device.id() + " not found",
+                    null
+            );
+        }
+
         return new TelemetryResult(device, telemetry);
     }
 
-    @Transactional
-    public void deleteById(String telemetryId) {
-        int id = parseTelemetryId(telemetryId);
-        DeviceTelemetry telemetry = telemetryRepository.findById(id)
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.NOT_FOUND,
-                        "Telemetry ID " + telemetryId + " not found",
-                        null
-                ));
-        telemetryRepository.deleteById(telemetry.id());
+    public List<String> monthsBetween(String startMonthValue, String endMonthValue) {
+        YearMonth startMonth = parseMonth(startMonthValue);
+        YearMonth endMonth = parseMonth(endMonthValue);
+
+        if (startMonth.isAfter(endMonth)) {
+            validationError("start_month cannot be after end_month");
+        }
+
+        List<String> months = new ArrayList<>();
+        YearMonth cursor = startMonth;
+
+        while (!cursor.isAfter(endMonth)) {
+            months.add(cursor.toString());
+            cursor = cursor.plusMonths(1);
+        }
+
+        return months;
+    }
+
+    public List<String> latestMonths() {
+        List<String> months = new ArrayList<>();
+        YearMonth startMonth = parseMonth(DEFAULT_START_MONTH);
+        YearMonth cursor = parseMonth(DEFAULT_END_MONTH);
+
+        while (!cursor.isBefore(startMonth)) {
+            months.add(cursor.toString());
+            cursor = cursor.minusMonths(1);
+        }
+
+        return months;
+    }
+
+    public String recordMonth(long ts) {
+        return YearMonth.from(Instant.ofEpochMilli(ts).atZone(ZoneOffset.UTC)).toString();
     }
 
     private Device getDevice(String deviceId) {
@@ -99,68 +129,32 @@ public class DeviceTelemetryService {
         }
     }
 
-    private Values getValues(Map<String, Object> request) {
-        Object rawValues = request == null ? null : request.get("values");
-        if (!(rawValues instanceof Map<?, ?> valuesMap)) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "Validation failed",
-                    "Attributes 'values.temperature' and 'values.humidity' must be numbers"
-            );
-        }
-
-        Object temperature = valuesMap.get("temperature");
-        Object humidity = valuesMap.get("humidity");
-
-        if (!(temperature instanceof Number temperatureNumber) || !(humidity instanceof Number humidityNumber)) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "Validation failed",
-                    "Attributes 'values.temperature' and 'values.humidity' must be numbers"
-            );
-        }
-
-        return new Values(temperatureNumber.doubleValue(), humidityNumber.doubleValue());
+    private String defaultMonth(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 
-    private int parseTelemetryId(String telemetryId) {
+    private YearMonth parseMonth(String month) {
         try {
-            int id = Integer.parseInt(telemetryId);
-            if (id < 1) throw new NumberFormatException();
-            return id;
-        } catch (NumberFormatException error) {
-            validationError("Telemetry ID must be a valid number");
-            return 1;
+            return YearMonth.parse(month);
+        } catch (DateTimeParseException error) {
+            validationError("Query parameter 'start_month' and 'end_month' must use YYYY-MM format");
+            return null;
         }
-    }
-
-    private void duplicateTelemetry(String deviceId, long ts) {
-        throw new ApiException(
-                HttpStatus.CONFLICT,
-                "Duplicate telemetry timestamp",
-                "Telemetry for device ID " + deviceId + " at ts " + ts + " already exists"
-        );
     }
 
     private void validationError(String details) {
         throw new ApiException(HttpStatus.BAD_REQUEST, "Validation failed", details);
     }
 
-    private record Values(
-            Double temperature,
-            Double humidity
-    ) {
-    }
-
     public record TelemetryResult(
             Device device,
-            DeviceTelemetry telemetry
+            TelemetryReading telemetry
     ) {
     }
 
     public record TelemetryListResult(
             Device device,
-            List<DeviceTelemetry> telemetries
+            List<TelemetryReading> telemetries
     ) {
     }
 }
