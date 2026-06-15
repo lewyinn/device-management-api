@@ -50,6 +50,29 @@ CASSANDRA_LOCAL_DATACENTER=datacenter1
 CASSANDRA_KEYSPACE=device_management
 ```
 
+Telemetry juga bisa masuk lewat MQTT subscriber:
+
+```env
+MQTT_BROKER_URL=mqtt://127.0.0.1:1883
+MQTT_TELEMETRY_TOPIC=gedung-solu/monitoring/lantai-1/devices/+/telemetry
+```
+
+Format topic:
+
+```text
+gedung-solu/monitoring/lantai-1/devices/{device_uuid}/telemetry
+```
+
+Format payload:
+
+```json
+{
+  "ts": 1781490918553,
+  "temperature": 27.47,
+  "humidity": 61.1
+}
+```
+
 Arsitektur database:
 
 ```text

@@ -1,5 +1,9 @@
 import app from './src/index.js';
 import database from './src/db/index.js';
+import {
+    startMqttTelemetrySubscriber,
+    stopMqttTelemetrySubscriber
+} from './src/mqtt/telemetrySubscriber.js';
 import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
@@ -11,6 +15,7 @@ const start = async () => {
     await database.authenticateSqlDatabase();
     await database.sync({ alter: false });
     await database.connectCassandra();
+    startMqttTelemetrySubscriber();
 
     const port = process.env.PORT || 3000;
 
@@ -46,6 +51,7 @@ const shutdown = async (signal) => {
 
     try {
         await closeHttpServer();
+        await stopMqttTelemetrySubscriber();
         await database.closeDatabases();
         console.log('Application shutdown completed');
         process.exit(0);
@@ -69,6 +75,7 @@ try {
     console.error('Application startup failed:', error);
 
     try {
+        await stopMqttTelemetrySubscriber();
         await database.closeDatabases();
     } catch (shutdownError) {
         console.error('Database cleanup after startup failure failed:', shutdownError);

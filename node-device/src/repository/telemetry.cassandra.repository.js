@@ -2,17 +2,9 @@ import db from '../db/index.js';
 
 const TABLE_NAME = 'device_telemetries';
 const { cassandraClient, cassandraTypes } = db;
-const lastTimestampByDevice = new Map();
 const { Long } = cassandraTypes;
 
-const nextTimestamp = (deviceId, ts) => {
-    const lastTs = lastTimestampByDevice.get(deviceId) || 0;
-    const nextTs = Math.max(ts, lastTs + 1);
-    lastTimestampByDevice.set(deviceId, nextTs);
-    return nextTs;
-};
-
-const recordMonth = (date) => {
+export const recordMonth = (date) => {
     const year = date.getUTCFullYear();
     const month = String(date.getUTCMonth() + 1).padStart(2, '0');
     return `${year}-${month}`;
@@ -42,8 +34,7 @@ const telemetryPoint = (row) => ({
     humidity: row.humidity
 });
 
-export const insertTelemetry = async ({ deviceId, ts, temperature, humidity }) => {
-    const safeTs = nextTimestamp(deviceId, ts);
+export const insertTelemetry = async ({ deviceId, recordMonth: telemetryRecordMonth, ts, temperature, humidity }) => {
     const query = `
         INSERT INTO ${TABLE_NAME} (device_id, record_month, ts, temperature, humidity)
         VALUES (?, ?, ?, ?, ?)
@@ -53,8 +44,8 @@ export const insertTelemetry = async ({ deviceId, ts, temperature, humidity }) =
         query,
         [
             cassandraTypes.Uuid.fromString(deviceId),
-            recordMonth(new Date(safeTs)),
-            Long.fromNumber(safeTs),
+            telemetryRecordMonth || recordMonth(new Date(ts)),
+            Long.fromNumber(ts),
             temperature,
             humidity
         ],
@@ -62,7 +53,7 @@ export const insertTelemetry = async ({ deviceId, ts, temperature, humidity }) =
     );
 
     return {
-        ts: safeTs,
+        ts,
         temperature,
         humidity
     };
