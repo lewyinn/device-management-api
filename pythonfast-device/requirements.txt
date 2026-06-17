@@ -6,3 +6,4 @@ cassandra-driver==3.30.0
 httpx==0.28.1
 pyasyncore==1.0.5
 psycopg2-binary==2.9.12
+fastapi-mqtt==2.2.0

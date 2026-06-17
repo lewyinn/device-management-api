@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.cassandra import connect_cassandra, shutdown_cassandra
 from app.core.database import check_sql_database, close_sql_database, sync_sql_database
+from app.core.mqtt import start_mqtt_subscriber, stop_mqtt_subscriber
 from app.routers import devices_router, device_telemetry_router
 
 
@@ -20,8 +21,10 @@ async def lifespan(app: FastAPI):
         check_sql_database()
         sync_sql_database()
         connect_cassandra()
+        await start_mqtt_subscriber()
         yield
     finally:
+        await stop_mqtt_subscriber()
         shutdown_cassandra()
         close_sql_database()
 
