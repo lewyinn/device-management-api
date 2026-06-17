@@ -73,7 +73,10 @@ const router = express.Router();
  *             example:
  *               error: Internal server error
  */
-router.post('/:id/telemetry', createTelemetry);
+router.post(
+    '/:id/telemetry',
+    createTelemetry
+);
 
 /**
  * @swagger
@@ -143,7 +146,10 @@ router.post('/:id/telemetry', createTelemetry);
  *             example:
  *               error: Internal server error
  */
-router.get('/:id/telemetry', getTelemetryByDevice);
+router.get(
+    '/:id/telemetry',
+    getTelemetryByDevice
+);
 
 /**
  * @swagger
@@ -208,6 +214,9 @@ router.get('/:id/telemetry', getTelemetryByDevice);
  *             example:
  *               error: Internal server error
  */
-router.get('/:id/telemetry/latest', getLatestTelemetryByDevice);
+router.get(
+    '/:id/telemetry/latest',
+    getLatestTelemetryByDevice
+);
 
 export default router;

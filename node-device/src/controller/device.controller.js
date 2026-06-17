@@ -1,6 +1,10 @@
+import { createHash } from 'crypto';
 import db from '../db/index.js';
+import { sendDeviceRegisteredTelegramNotification } from '../service/telegram.service.js';
 
 const { sequelize, Device } = db;
+const LONG_POLL_TIMEOUT_MS = 25 * 1000;
+const LONG_POLL_INTERVAL_MS = 1000;
 
 const isUuid = (value) => (
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -21,6 +25,40 @@ const getPagination = (page = '1', limit = '10') => {
         pageNum,
         limitNum: normalizedLimit,
         offset: (pageNum - 1) * normalizedLimit
+    };
+};
+
+const wait = (milliseconds) => new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+});
+
+const buildSnapshot = ({ count, data }) => createHash('sha256')
+    .update(JSON.stringify({ count, data }))
+    .digest('hex');
+
+const getDevicePage = async (page, limit) => {
+    const pagination = getPagination(page, limit);
+    if (!pagination) {
+        return null;
+    }
+
+    const { pageNum, limitNum, offset } = pagination;
+    const { count, rows } = await Device.findAndCountAll({
+        offset,
+        limit: limitNum,
+        order: [['name', 'ASC']]
+    });
+    const data = rows.map((row) => row.toJSON());
+
+    return {
+        meta: {
+            page: pageNum,
+            limit: limitNum,
+            total_data: count,
+            total_pages: Math.ceil(count / limitNum)
+        },
+        snapshot: buildSnapshot({ count, data }),
+        data
     };
 };
 
@@ -51,10 +89,20 @@ export const createDevice = async (req, res, next) => {
             return Device.create({ name, type, status }, { transaction });
         });
 
-        return res.status(201).json({
+        const deviceData = device.toJSON();
+
+        res.status(201).json({
             message: 'Device successfully registered',
-            data: device.toJSON()
+            data: deviceData
         });
+
+        setImmediate(() => {
+            void sendDeviceRegisteredTelegramNotification(deviceData).catch((error) => {
+                console.error('Telegram device registration notification failed:', error.message);
+            });
+        });
+
+        return;
     } catch (err) {
         return next(err);
     }
@@ -62,30 +110,90 @@ export const createDevice = async (req, res, next) => {
 
 export const getDevices = async (req, res, next) => {
     try {
-        const pagination = getPagination(req.query.page, req.query.limit);
-        if (!pagination) {
+        const devicePage = await getDevicePage(req.query.page, req.query.limit);
+        if (!devicePage) {
             return res.status(400).json({
                 error: 'Validation failed',
                 details: "Query parameter 'page' or 'limit' must be a valid number"
             });
         }
 
-        const { pageNum, limitNum, offset } = pagination;
-        const { count, rows } = await Device.findAndCountAll({
-            offset,
-            limit: limitNum,
-            order: [['name', 'ASC']]
-        });
-
         return res.status(200).json({
             message: 'Success retrieving devices',
-            meta: {
-                page: pageNum,
-                limit: limitNum,
-                total_data: count,
-                total_pages: Math.ceil(count / limitNum)
-            },
-            data: rows
+            meta: devicePage.meta,
+            data: devicePage.data
+        });
+    } catch (err) {
+        return next(err);
+    }
+};
+
+export const getShortPollingDevices = async (req, res, next) => {
+    try {
+        const devicePage = await getDevicePage(req.query.page, req.query.limit);
+        if (!devicePage) {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: "Query parameter 'page' or 'limit' must be a valid number"
+            });
+        }
+
+        return res.status(200).json({
+            message: 'Short polling response: devices retrieved',
+            pattern: 'short_polling',
+            details: 'Client requests this endpoint repeatedly at a fixed interval to refresh device data',
+            snapshot: devicePage.snapshot,
+            meta: devicePage.meta,
+            data: devicePage.data
+        });
+    } catch (err) {
+        return next(err);
+    }
+};
+
+export const getLongPollingDevices = async (req, res, next) => {
+    try {
+        const clientSnapshot = req.query.snapshot;
+
+        if (clientSnapshot !== undefined && typeof clientSnapshot !== 'string') {
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: "Query parameter 'snapshot' must be a string"
+            });
+        }
+
+        const startedAt = Date.now();
+        const deadline = startedAt + LONG_POLL_TIMEOUT_MS;
+
+        while (Date.now() < deadline) {
+            const devicePage = await getDevicePage(req.query.page, req.query.limit);
+            if (!devicePage) {
+                return res.status(400).json({
+                    error: 'Validation failed',
+                    details: "Query parameter 'page' or 'limit' must be a valid number"
+                });
+            }
+
+            if (!clientSnapshot || devicePage.snapshot !== clientSnapshot) {
+                return res.status(200).json({
+                    message: 'Long polling response: device data changed',
+                    pattern: 'long_polling',
+                    details: 'Server held the HTTP request until the device list snapshot changed',
+                    snapshot: devicePage.snapshot,
+                    meta: devicePage.meta,
+                    data: devicePage.data
+                });
+            }
+
+            await wait(Math.min(LONG_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
+        }
+
+        return res.status(200).json({
+            message: 'Long polling timeout: device data did not change',
+            pattern: 'long_polling',
+            details: `No device data change was detected within ${LONG_POLL_TIMEOUT_MS / 1000} seconds`,
+            snapshot: clientSnapshot,
+            data: null
         });
     } catch (err) {
         return next(err);

@@ -3,10 +3,18 @@ import {
     createDevice,
     getDevices,
     getDeviceById,
+    getLongPollingDevices,
+    getShortPollingDevices,
     updateDevice,
     patchDevice,
     deleteDevice
 } from '../controller/device.controller.js';
+import {
+    deviceReadRateLimiter,
+    deviceReadThrottler,
+    deviceRegistrationRateLimiter,
+    deviceRegistrationThrottler
+} from '../middleware/deviceHttpProtection.middleware.js';
 
 const router = express.Router();
 
@@ -59,7 +67,12 @@ const router = express.Router();
  *             example:
  *               error: Internal server error
  */
-router.post('/', createDevice);
+router.post(
+    '/',
+    // deviceRegistrationRateLimiter,
+    deviceRegistrationThrottler,
+    createDevice
+);
 
 /**
  * @swagger
@@ -116,7 +129,22 @@ router.post('/', createDevice);
  *             example:
  *               error: Internal server error
  */
-router.get('/', getDevices);
+router.get(
+    '/',
+    // deviceReadThrottler,
+    deviceReadRateLimiter,
+    getDevices
+);
+
+// router.get(
+//     '/short-poll',
+//     getShortPollingDevices
+// );
+
+// router.get(
+//     '/long-poll',
+//     getLongPollingDevices
+// );
 
 /**
  * @swagger
@@ -171,7 +199,11 @@ router.get('/', getDevices);
  *             example:
  *               error: Internal server error
  */
-router.get('/:id', getDeviceById);
+router.get(
+    '/:id',
+    deviceReadRateLimiter,
+    getDeviceById
+);
 
 /**
  * @swagger

@@ -59,6 +59,7 @@ export const createTelemetry = async (req, res, next) => {
     }
 };
 
+
 export const getTelemetryByDevice = async (req, res, next) => {
     try {
         const { id } = req.params;

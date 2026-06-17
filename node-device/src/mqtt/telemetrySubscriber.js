@@ -1,5 +1,7 @@
 import mqtt from 'mqtt';
 import { insertTelemetry, recordMonth } from '../repository/telemetry.cassandra.repository.js';
+import { findDeviceForTelemetry } from '../repository/device.repository.js';
+import { evaluateTelemetryAlerts } from '../service/alertRuleEvaluator.service.js';
 
 const RECONNECT_PERIOD_MS = 2000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -51,6 +53,13 @@ const handleTelemetryMessage = async (topic, payload) => {
         return;
     }
 
+    const deviceData = await findDeviceForTelemetry(deviceId);
+    if (!deviceData) {
+        console.warn(`MQTT telemetry ignored because device ID ${deviceId} not found`);
+        return;
+    }
+
+
     const telemetry = parseTelemetryPayload(payload);
     if (!telemetry) {
         console.warn(`MQTT telemetry ignored because payload is invalid for topic: ${topic}`);
@@ -66,6 +75,12 @@ const handleTelemetryMessage = async (topic, payload) => {
             humidity: telemetry.humidity
         });
         console.log(`MQTT telemetry persisted for device ${deviceId} at ${telemetry.ts}`);
+
+        setImmediate(() => {
+            void evaluateTelemetryAlerts({ device: deviceData, telemetry }).catch((error) => {
+                console.error('Failed to evaluate telemetry alert rules:', error.message);
+            });
+        });
     } catch (error) {
         console.error('Failed to persist MQTT telemetry:', error.message);
     }
