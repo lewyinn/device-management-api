@@ -1,22 +1,56 @@
+import asyncio
+import hashlib
+import json
 from math import ceil
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.dependencies.device_http_protection import read_rate_limit, register_rate_limit, register_throttling, read_throttling
 from app.models import Device
 from app.schemas import DeviceCreate, DevicePatch, DeviceUpdate
+from app.services.telegram import send_device_registered_telegram_notification
 
 router = APIRouter(prefix="/api/v1/devices", tags=["Devices"])
+LONG_POLL_TIMEOUT_SECONDS = 25
+LONG_POLL_INTERVAL_SECONDS = 1
 
 
 def device_response(device: Device):
     return {
-        "id": device.id,
+        "id": str(device.id),
         "name": device.name,
         "type": device.type,
         "status": device.status,
+    }
+
+
+def device_page_response(db: Session, page: int = 1, limit: int = 10):
+    if page < 1:
+        page = 1
+    if limit < 1:
+        limit = 10
+    if limit > 50:
+        limit = 50
+
+    total_data = db.query(Device).count()
+    offset = (page - 1) * limit
+    devices = db.query(Device).order_by(Device.name.asc()).offset(offset).limit(limit).all()
+    data = [device_response(device) for device in devices]
+
+    return {
+        "snapshot": hashlib.sha256(
+            json.dumps({"total_data": total_data, "data": data}, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total_data": total_data,
+            "total_pages": ceil(total_data / limit) if total_data else 0,
+        },
+        "data": data,
     }
 
 
@@ -44,6 +78,8 @@ def check_status(device_status: str):
 
 @router.post(
     "",
+    # dependencies=[Depends(register_rate_limit)],
+    dependencies=[Depends(register_throttling)],
     status_code=status.HTTP_201_CREATED,
     name="Create Device",
     description="Mendaftarkan perangkat baru ke dalam sistem.",
@@ -87,6 +123,7 @@ def check_status(device_status: str):
 )
 async def create_device(
     payload: DeviceCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     name = payload.name
@@ -119,14 +156,19 @@ async def create_device(
             detail={"error": "Internal server error"},
         )
 
+    device_data = device_response(device)
+    background_tasks.add_task(send_device_registered_telegram_notification, device_data)
+
     return {
         "message": "Device successfully registered",
-        "data": device_response(device),
+        "data": device_data,
     }
 
 
 @router.get(
     "",
+    dependencies=[Depends(read_rate_limit)],
+    # dependencies=[Depends(read_throttling)],
     name="Read All Devices",
     description="Mengambil daftar seluruh perangkat dengan pagination.",
     responses={
@@ -180,26 +222,73 @@ async def list_devices(
     limit: int = 10,
     db: Session = Depends(get_db),
 ):
-    if page < 1:
-        page = 1
-    if limit < 1:
-        limit = 10
-    if limit > 50:
-        limit = 50
-
-    total_data = db.query(Device).count()
-    offset = (page - 1) * limit
-    devices = db.query(Device).order_by(Device.name.asc()).offset(offset).limit(limit).all()
+    device_page = device_page_response(db, page, limit)
 
     return {
         "message": "Success retrieving devices",
-        "meta": {
-            "page": page,
-            "limit": limit,
-            "total_data": total_data,
-            "total_pages": ceil(total_data / limit) if total_data else 0,
-        },
-        "data": [device_response(device) for device in devices],
+        "meta": device_page["meta"],
+        "data": device_page["data"],
+    }
+
+
+@router.get(
+    "/short-poll",
+    dependencies=[Depends(read_rate_limit)],
+    name="Short Poll Devices",
+    description="Mengambil daftar device untuk pola HTTP short polling.",
+)
+async def short_poll_devices(
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    device_page = device_page_response(db, page, limit)
+
+    return {
+        "message": "Short polling response: devices retrieved",
+        "pattern": "short_polling",
+        "details": "Client requests this endpoint repeatedly at a fixed interval to refresh device data",
+        "snapshot": device_page["snapshot"],
+        "meta": device_page["meta"],
+        "data": device_page["data"],
+    }
+
+
+@router.get(
+    "/long-poll",
+    dependencies=[Depends(read_rate_limit)],
+    name="Long Poll Devices",
+    description="Menahan request sampai data device berubah atau timeout.",
+)
+async def long_poll_devices(
+    snapshot: str | None = None,
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    deadline = asyncio.get_running_loop().time() + LONG_POLL_TIMEOUT_SECONDS
+
+    while asyncio.get_running_loop().time() < deadline:
+        device_page = device_page_response(db, page, limit)
+
+        if not snapshot or device_page["snapshot"] != snapshot:
+            return {
+                "message": "Long polling response: device data changed",
+                "pattern": "long_polling",
+                "details": "Server held the HTTP request until the device list snapshot changed",
+                "snapshot": device_page["snapshot"],
+                "meta": device_page["meta"],
+                "data": device_page["data"],
+            }
+
+        await asyncio.sleep(LONG_POLL_INTERVAL_SECONDS)
+
+    return {
+        "message": "Long polling timeout: device data did not change",
+        "pattern": "long_polling",
+        "details": f"No device data change was detected within {LONG_POLL_TIMEOUT_SECONDS} seconds",
+        "snapshot": snapshot,
+        "data": None,
     }
 
 
