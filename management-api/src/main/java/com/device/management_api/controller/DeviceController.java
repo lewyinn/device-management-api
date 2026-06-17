@@ -1,6 +1,12 @@
 package com.device.management_api.controller;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,33 +25,52 @@ import org.springframework.web.bind.annotation.RestController;
 import com.device.management_api.dto.device.CreateDeviceRequest;
 import com.device.management_api.dto.device.DeviceDataResponse;
 import com.device.management_api.dto.device.DeviceListResponse;
+import com.device.management_api.dto.device.DevicePollingResponse;
 import com.device.management_api.dto.device.DeviceResponse;
 import com.device.management_api.dto.device.MetaResponse;
 import com.device.management_api.dto.device.PatchDeviceRequest;
 import com.device.management_api.dto.device.UpdateDeviceRequest;
 import com.device.management_api.entity.Device;
 import com.device.management_api.exception.ApiException;
+import com.device.management_api.service.DeviceHttpProtectionService;
 import com.device.management_api.service.DeviceService;
+import com.device.management_api.service.TelegramNotificationService;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @RestController
 @Tag(name = "Device")
 @RequestMapping("/api/v1/devices")
 public class DeviceController {
+    private static final int LONG_POLL_TIMEOUT_SECONDS = 25;
+    private static final int LONG_POLL_INTERVAL_SECONDS = 1;
 
     private final DeviceService deviceService;
+    private final DeviceHttpProtectionService deviceHttpProtectionService;
+    private final ObjectMapper objectMapper;
+    private final TelegramNotificationService telegramNotificationService;
 
-    public DeviceController(DeviceService deviceService) {
+    public DeviceController(
+            DeviceService deviceService,
+            DeviceHttpProtectionService deviceHttpProtectionService,
+            ObjectMapper objectMapper,
+            TelegramNotificationService telegramNotificationService
+    ) {
         this.deviceService = deviceService;
+        this.deviceHttpProtectionService = deviceHttpProtectionService;
+        this.objectMapper = objectMapper;
+        this.telegramNotificationService = telegramNotificationService;
     }
 
     @PostMapping
@@ -57,13 +82,13 @@ public class DeviceController {
                         schema = @Schema(implementation = DeviceDataResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                  "message": "Device successfully registered",
-                                  "data": {
-                                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                                    "name": "Sensor-Suhu",
-                                    "type": "PM2120",
-                                    "status": "active"
-                                  }
+                                    "message": "Device successfully registered",
+                                    "data": {
+                                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
+                                    }
                                 }
                                 """))),
         @ApiResponse(responseCode = "400", description = "Bad Request",
@@ -74,33 +99,47 @@ public class DeviceController {
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
     public ResponseEntity<?> create(
+            HttpServletRequest httpRequest,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
                                     {
-                                      "name": "Sensor-Suhu",
-                                      "type": "PM2120",
-                                      "status": "active"
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
                                     }
                                     """)
                     )
             )
             @Valid @RequestBody CreateDeviceRequest request,
-            BindingResult validationResult) {
+            BindingResult validationResult) 
+        {
         if (validationResult.hasErrors()) {
             return validationError(validationResult);
         }
 
+        ResponseEntity<?> rateLimitError = deviceHttpProtectionService.registerRateLimit(httpRequest);
+        if (rateLimitError != null) {
+            return rateLimitError;
+        }
+
+        // ResponseEntity<?> throttlingError = deviceHttpProtectionService.registerThrottling(httpRequest);
+        // if (throttlingError != null) {
+        //     return throttlingError;
+        // }
+
         try {
             Device device = deviceService.create(request);
+            DeviceResponse deviceResponse = toResponse(device);
+            telegramNotificationService.sendDeviceRegisteredNotification(deviceResponse);
             return ResponseEntity.status(HttpStatus.CREATED).body(
-                    new DeviceDataResponse("Device successfully registered", toResponse(device))
+                    new DeviceDataResponse("Device successfully registered", deviceResponse)
             );
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
@@ -114,21 +153,21 @@ public class DeviceController {
                         schema = @Schema(implementation = DeviceListResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                  "message": "Success retrieving devices",
-                                  "meta": {
-                                    "page": 1,
-                                    "limit": 10,
-                                    "total_data": 1,
-                                    "total_pages": 1
-                                  },
-                                  "data": [
-                                    {
-                                      "id": "550e8400-e29b-41d4-a716-446655440000",
-                                      "name": "Sensor-Suhu",
-                                      "type": "PM2120",
-                                      "status": "active"
-                                    }
-                                  ]
+                                    "message": "Success retrieving devices",
+                                    "meta": {
+                                        "page": 1,
+                                        "limit": 10,
+                                        "total_data": 1,
+                                        "total_pages": 1
+                                    },
+                                    "data": [
+                                        {
+                                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
+                                        }
+                                    ]
                                 }
                                 """))),
         @ApiResponse(responseCode = "400", description = "Bad Request",
@@ -139,9 +178,20 @@ public class DeviceController {
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
     public ResponseEntity<?> findAll(
+            HttpServletRequest httpRequest,
             @RequestParam(defaultValue = "1") String page,
             @RequestParam(defaultValue = "10") String limit
     ) {
+        ResponseEntity<?> rateLimitError = deviceHttpProtectionService.readRateLimit(httpRequest);
+        if (rateLimitError != null) {
+            return rateLimitError;
+        }
+
+        // ResponseEntity<?> throttlingError = deviceHttpProtectionService.readThrottling(httpRequest);
+        // if (throttlingError != null) {
+        //     return throttlingError;
+        // }
+
         try {
             DeviceService.DevicePage result = deviceService.findAll(page, limit);
             List<DeviceResponse> devices = result.devices()
@@ -156,10 +206,78 @@ public class DeviceController {
             ));
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
+
+    // @GetMapping("/short-poll")
+    // @Operation(summary = "Short Poll Devices")
+    // public ResponseEntity<?> shortPoll(
+    //         HttpServletRequest httpRequest,
+    //         @RequestParam(defaultValue = "1") String page,
+    //         @RequestParam(defaultValue = "10") String limit) 
+    // {
+    //     try {
+    //         DevicePageView result = devicePageView(page, limit);
+
+    //         return ResponseEntity.ok(new DevicePollingResponse(
+    //                 "Short polling response: devices retrieved",
+    //                 "short_polling",
+    //                 "Client requests this endpoint repeatedly at a fixed interval to refresh device data",
+    //                 result.snapshot(),
+    //                 result.meta(),
+    //                 result.devices()
+    //         ));
+    //     } catch (ApiException error) {
+    //         return apiError(error);
+    //     } catch (JsonProcessingException | IllegalStateException error) {
+    //         return internalError();
+    //     }
+    // }
+
+    // @GetMapping("/long-poll")
+    // @Operation(summary = "Long Poll Devices")
+    // public ResponseEntity<?> longPoll(
+    //         HttpServletRequest httpRequest,
+    //         @RequestParam(required = false) String snapshot,
+    //         @RequestParam(defaultValue = "1") String page,
+    //         @RequestParam(defaultValue = "10") String limit
+    // ) {
+    //     try {
+    //         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(LONG_POLL_TIMEOUT_SECONDS);
+
+    //         while (System.nanoTime() < deadline) {
+    //             DevicePageView result = devicePageView(page, limit);
+
+    //             if (snapshot == null || snapshot.isBlank() || !snapshot.equals(result.snapshot())) {
+    //                 return ResponseEntity.ok(new DevicePollingResponse(
+    //                         "Long polling response: device data changed",
+    //                         "long_polling",
+    //                         "Server held the HTTP request until the device list snapshot changed",
+    //                         result.snapshot(),
+    //                         result.meta(),
+    //                         result.devices()
+    //                 ));
+    //             }
+
+    //             LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(LONG_POLL_INTERVAL_SECONDS));
+    //         }
+
+    //         return ResponseEntity.ok(new DevicePollingResponse(
+    //                 "Long polling timeout: device data did not change",
+    //                 "long_polling",
+    //                 "No device data change was detected within " + LONG_POLL_TIMEOUT_SECONDS + " seconds",
+    //                 snapshot,
+    //                 null,
+    //                 null
+    //         ));
+    //     } catch (ApiException error) {
+    //         return apiError(error);
+    //     } catch (JsonProcessingException | IllegalStateException error) {
+    //         return internalError();
+    //     }
+    // }
 
     @GetMapping("/{device_id}")
     @Operation(summary = "Read Device Detail")
@@ -170,13 +288,13 @@ public class DeviceController {
                         schema = @Schema(implementation = DeviceDataResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                  "message": "Device found",
-                                  "data": {
-                                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                                    "name": "Sensor-Suhu",
-                                    "type": "PM2120",
-                                    "status": "active"
-                                  }
+                                    "message": "Device found",
+                                    "data": {
+                                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
+                                    }
                                 }
                                 """))),
         @ApiResponse(responseCode = "400", description = "Bad Request",
@@ -189,13 +307,16 @@ public class DeviceController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
                         examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
     })
-    public ResponseEntity<?> findById(@PathVariable("device_id") String deviceId) {
+    public ResponseEntity<?> findById(
+            HttpServletRequest httpRequest,
+            @PathVariable("device_id") String deviceId
+    ) {
         try {
             Device device = deviceService.findById(deviceId);
             return ResponseEntity.ok(new DeviceDataResponse("Device found", toResponse(device)));
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
@@ -209,13 +330,13 @@ public class DeviceController {
                         schema = @Schema(implementation = DeviceDataResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                  "message": "Device data fully updated successfully",
-                                  "data": {
-                                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                                    "name": "Sensor-Suhu",
-                                    "type": "PM2120",
-                                    "status": "active"
-                                  }
+                                    "message": "Device data fully updated successfully",
+                                    "data": {
+                                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
+                                    }
                                 }
                                 """))),
         @ApiResponse(responseCode = "400", description = "Bad Request",
@@ -236,9 +357,9 @@ public class DeviceController {
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
                                     {
-                                      "name": "Sensor-Suhu",
-                                      "type": "PM2120",
-                                      "status": "active"
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
                                     }
                                     """)
                     )
@@ -255,7 +376,7 @@ public class DeviceController {
             return ResponseEntity.ok(new DeviceDataResponse("Device data fully updated successfully", toResponse(device)));
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
@@ -269,13 +390,13 @@ public class DeviceController {
                         schema = @Schema(implementation = DeviceDataResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                  "message": "Device status updated successfully",
-                                  "data": {
-                                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                                    "name": "Sensor-Suhu",
-                                    "type": "PM2120",
-                                    "status": "active"
-                                  }
+                                    "message": "Device status updated successfully",
+                                    "data": {
+                                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                                        "name": "Sensor-Suhu",
+                                        "type": "PM2120",
+                                        "status": "active"
+                                    }
                                 }
                                 """))),
         @ApiResponse(responseCode = "400", description = "Bad Request",
@@ -296,7 +417,7 @@ public class DeviceController {
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
                                     {
-                                      "status": "active"
+                                        "status": "active"
                                     }
                                     """)
                     )
@@ -308,7 +429,7 @@ public class DeviceController {
             return ResponseEntity.ok(new DeviceDataResponse("Device status updated successfully", toResponse(device)));
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
@@ -333,13 +454,35 @@ public class DeviceController {
             return ResponseEntity.noContent().build();
         } catch (ApiException error) {
             return apiError(error);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
 
     private DeviceResponse toResponse(Device device) {
         return new DeviceResponse(device.id(), device.name(), device.type(), device.status());
+    }
+
+    private DevicePageView devicePageView(String page, String limit) throws JsonProcessingException {
+        DeviceService.DevicePage result = deviceService.findAll(page, limit);
+        List<DeviceResponse> devices = result.devices()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+        MetaResponse meta = new MetaResponse(result.page(), result.limit(), result.totalData(), result.totalPages());
+
+        return new DevicePageView(meta, devices, snapshot(result.totalData(), devices));
+    }
+
+    private String snapshot(long totalData, List<DeviceResponse> devices) throws JsonProcessingException {
+        String payload = objectMapper.writeValueAsString(new SnapshotPayload(totalData, devices));
+
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("SHA-256 algorithm is unavailable", error);
+        }
     }
 
     private ResponseEntity<ErrorResponse> validationError(BindingResult validationResult) {
@@ -361,6 +504,19 @@ public class DeviceController {
     public record ErrorResponse(
             String error,
             Object details
+    ) {
+    }
+
+    private record DevicePageView(
+            MetaResponse meta,
+            List<DeviceResponse> devices,
+            String snapshot
+    ) {
+    }
+
+    private record SnapshotPayload(
+            long totalData,
+            List<DeviceResponse> devices
     ) {
     }
 }

@@ -26,7 +26,7 @@ import com.device.management_api.service.DeviceTelemetryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-@SpringBootTest
+@SpringBootTest(properties = "device-http-protection.enabled=false")
 @AutoConfigureMockMvc
 class DeviceControllerTests {
     @Autowired

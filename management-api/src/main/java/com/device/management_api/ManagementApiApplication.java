@@ -7,6 +7,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableAsync;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Paths;
@@ -14,6 +17,7 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.servers.Server;
 
 @ConfigurationPropertiesScan
+@EnableAsync
 @SpringBootApplication
 public class ManagementApiApplication {
 
@@ -21,6 +25,11 @@ public class ManagementApiApplication {
 
 	public static void main(String[] args) {
 		SpringApplication.run(ManagementApiApplication.class, args);
+	}
+
+	@Bean
+	public ObjectMapper objectMapper() {
+		return new ObjectMapper();
 	}
 
 	@Bean
@@ -38,6 +47,8 @@ public class ManagementApiApplication {
 		return openApi -> {
 			Paths paths = new Paths();
 			addCleanPath(openApi, paths, API_PREFIX + "/devices");
+			addCleanPath(openApi, paths, API_PREFIX + "/devices/short-poll");
+			addCleanPath(openApi, paths, API_PREFIX + "/devices/long-poll");
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}");
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}/telemetry");
 			addCleanPath(openApi, paths, API_PREFIX + "/devices/{device_id}/telemetry/latest");
