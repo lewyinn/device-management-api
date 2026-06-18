@@ -21,6 +21,59 @@ Swagger:
 http://localhost:8000/api-docs
 ```
 
+WebSocket:
+
+```text
+ws://localhost:8000/ws
+```
+
+Subscribe ke channel:
+
+```json
+{
+  "type": "subscribe",
+  "channels": ["telemetry", "deviceRegister"]
+}
+```
+
+Channel yang tersedia:
+
+```text
+telemetry
+deviceRegister
+device_telemetry:{device_uuid}
+```
+
+Event telemetry:
+
+```json
+{
+  "type": "telemetry_received",
+  "data": {
+    "device_id": "550e8400-e29b-41d4-a716-446655440000",
+    "device_name": "Sensor-Suhu",
+    "device_type": "PM2120",
+    "ts": 1781490918553,
+    "temperature": 27.47,
+    "humidity": 61.1
+  }
+}
+```
+
+Event device registration:
+
+```json
+{
+  "type": "device_registered",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Sensor-Suhu",
+    "type": "PM2120",
+    "status": "active"
+  }
+}
+```
+
 ## Database
 
 Backend memakai dua database:

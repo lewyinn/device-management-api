@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.websocket import websocket_manager
 from app.dependencies.device_http_protection import read_rate_limit, register_rate_limit, register_throttling, read_throttling
 from app.models import Device
 from app.schemas import DeviceCreate, DevicePatch, DeviceUpdate
@@ -157,6 +158,7 @@ async def create_device(
         )
 
     device_data = device_response(device)
+    await websocket_manager.broadcast_device_registered(device_data)
     background_tasks.add_task(send_device_registered_telegram_notification, device_data)
 
     return {

@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 from fastapi_mqtt import FastMQTT, MQTTConfig
 
 from app.core.cassandra import get_telemetry_repository
+from app.core.database import SessionLocal
+from app.core.websocket import websocket_manager
+from app.models import Device
 
 load_dotenv()
 
@@ -106,8 +109,25 @@ def persist_telemetry(topic: str, payload: bytes):
             humidity=telemetry["humidity"],
         )
         print(f"MQTT telemetry persisted for device {device_id} at {telemetry['ts']}")
+        with SessionLocal() as db:
+            device = db.query(Device).filter(Device.id == str(device_id)).first()
+
+            if device is None:
+                print(f"WebSocket telemetry ignored because device ID {device_id} not found")
+                return None
+
+            return {
+                "device": {
+                    "id": str(device.id),
+                    "name": device.name,
+                    "type": device.type,
+                    "status": device.status,
+                },
+                "telemetry": telemetry,
+            }
     except Exception as error:
         print(f"Failed to persist MQTT telemetry: {error}")
+        return None
 
 
 @fast_mqtt.on_connect()
@@ -131,7 +151,13 @@ def handle_subscribe(client, mid, qos, properties):
 
 @fast_mqtt.subscribe(MQTT_TOPIC, qos=0)
 async def handle_telemetry_message(client, topic, payload, qos, properties):
-    persist_telemetry(topic, payload)
+    result = await asyncio.to_thread(persist_telemetry, topic, payload)
+
+    if result is not None:
+        await websocket_manager.broadcast_telemetry(
+            result["device"],
+            result["telemetry"],
+        )
 
 
 async def start_mqtt_subscriber():

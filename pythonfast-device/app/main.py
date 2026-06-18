@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, WebSocket, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.core.cassandra import connect_cassandra, shutdown_cassandra
 from app.core.database import check_sql_database, close_sql_database, sync_sql_database
 from app.core.mqtt import start_mqtt_subscriber, stop_mqtt_subscriber
+from app.core.websocket import websocket_manager
 from app.routers import devices_router, device_telemetry_router
 
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await stop_mqtt_subscriber()
+        await websocket_manager.shutdown()
         shutdown_cassandra()
         close_sql_database()
 
@@ -39,6 +41,11 @@ app = FastAPI(
 
 app.include_router(devices_router)
 app.include_router(device_telemetry_router)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket_manager.handle_connection(websocket)
 
 
 @app.exception_handler(HTTPException)

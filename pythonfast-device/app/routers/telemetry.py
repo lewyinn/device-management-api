@@ -12,6 +12,7 @@ from app.core.cassandra import (
     get_telemetry_repository,
 )
 from app.core.database import get_db
+from app.core.websocket import websocket_manager
 from app.models import Device
 from app.schemas import TelemetryCreate
 
@@ -145,6 +146,20 @@ async def create_telemetry(
         ts=telemetry_ts,
         temperature=float(temperature),
         humidity=float(humidity),
+    )
+    telemetry_data = {
+        "ts": telemetry.ts,
+        "temperature": telemetry.temperature,
+        "humidity": telemetry.humidity,
+    }
+    await websocket_manager.broadcast_telemetry(
+        {
+            "id": normalize_device_id(device.id),
+            "name": device.name,
+            "type": device.type,
+            "status": device.status,
+        },
+        telemetry_data,
     )
 
     return {
