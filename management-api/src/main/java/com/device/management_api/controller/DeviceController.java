@@ -35,6 +35,7 @@ import com.device.management_api.exception.ApiException;
 import com.device.management_api.service.DeviceHttpProtectionService;
 import com.device.management_api.service.DeviceService;
 import com.device.management_api.service.TelegramNotificationService;
+import com.device.management_api.websocket.TelemetryWebSocketHandler;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,17 +61,20 @@ public class DeviceController {
     private final DeviceHttpProtectionService deviceHttpProtectionService;
     private final ObjectMapper objectMapper;
     private final TelegramNotificationService telegramNotificationService;
+    private final TelemetryWebSocketHandler telemetryWebSocketHandler;
 
     public DeviceController(
             DeviceService deviceService,
             DeviceHttpProtectionService deviceHttpProtectionService,
             ObjectMapper objectMapper,
-            TelegramNotificationService telegramNotificationService
+            TelegramNotificationService telegramNotificationService,
+            TelemetryWebSocketHandler telemetryWebSocketHandler
     ) {
         this.deviceService = deviceService;
         this.deviceHttpProtectionService = deviceHttpProtectionService;
         this.objectMapper = objectMapper;
         this.telegramNotificationService = telegramNotificationService;
+        this.telemetryWebSocketHandler = telemetryWebSocketHandler;
     }
 
     @PostMapping
@@ -133,6 +137,7 @@ public class DeviceController {
         try {
             Device device = deviceService.create(request);
             DeviceResponse deviceResponse = toResponse(device);
+            telemetryWebSocketHandler.broadcastDeviceRegistered(deviceResponse);
             telegramNotificationService.sendDeviceRegisteredNotification(deviceResponse);
             return ResponseEntity.status(HttpStatus.CREATED).body(
                     new DeviceDataResponse("Device successfully registered", deviceResponse)

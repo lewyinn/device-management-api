@@ -14,7 +14,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.stereotype.Component;
 
+import com.device.management_api.dto.device.DeviceResponse;
+import com.device.management_api.dto.telemetry.TelemetryReading;
+import com.device.management_api.entity.Device;
 import com.device.management_api.repository.CassandraTelemetryRepository;
+import com.device.management_api.repository.DeviceRepository;
+import com.device.management_api.websocket.TelemetryWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient;
@@ -32,6 +37,8 @@ public class MqttTelemetrySubscriber {
 
     private final MqttProperties properties;
     private final CassandraTelemetryRepository telemetryRepository;
+    private final DeviceRepository deviceRepository;
+    private final TelemetryWebSocketHandler telemetryWebSocketHandler;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -42,10 +49,14 @@ public class MqttTelemetrySubscriber {
 
     public MqttTelemetrySubscriber(
             MqttProperties properties,
-            CassandraTelemetryRepository telemetryRepository
+            CassandraTelemetryRepository telemetryRepository,
+            DeviceRepository deviceRepository,
+            TelemetryWebSocketHandler telemetryWebSocketHandler
     ) {
         this.properties = properties;
         this.telemetryRepository = telemetryRepository;
+        this.deviceRepository = deviceRepository;
+        this.telemetryWebSocketHandler = telemetryWebSocketHandler;
     }
 
     @PostConstruct
@@ -161,7 +172,7 @@ public class MqttTelemetrySubscriber {
         }
 
         try {
-            telemetryRepository.insert(
+            TelemetryReading telemetry = telemetryRepository.insert(
                     deviceId,
                     recordMonth(payload.ts()),
                     payload.ts(),
@@ -169,6 +180,22 @@ public class MqttTelemetrySubscriber {
                     payload.humidity()
             );
             System.out.println("MQTT telemetry persisted for device " + deviceId + " at " + payload.ts());
+
+            Device device = deviceRepository.findById(deviceId).orElse(null);
+            if (device == null) {
+                System.out.println("WebSocket telemetry ignored because device ID " + deviceId + " not found");
+                return;
+            }
+
+            telemetryWebSocketHandler.broadcastTelemetry(
+                    new DeviceResponse(
+                            device.id(),
+                            device.name(),
+                            device.type(),
+                            device.status()
+                    ),
+                    telemetry
+            );
         } catch (RuntimeException error) {
             System.out.println("Failed to persist MQTT telemetry: " + error.getMessage());
         }

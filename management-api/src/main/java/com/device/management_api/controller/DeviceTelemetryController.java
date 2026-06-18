@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.device.management_api.dto.device.DeviceResponse;
 import com.device.management_api.dto.telemetry.CreateTelemetryRequest;
 import com.device.management_api.dto.telemetry.TelemetryDataResponse;
 import com.device.management_api.dto.telemetry.TelemetryDeviceResponse;
@@ -21,6 +22,7 @@ import com.device.management_api.dto.telemetry.TelemetryResponse;
 import com.device.management_api.entity.Device;
 import com.device.management_api.exception.ApiException;
 import com.device.management_api.service.DeviceTelemetryService;
+import com.device.management_api.websocket.TelemetryWebSocketHandler;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,9 +41,14 @@ import jakarta.validation.Valid;
 public class DeviceTelemetryController {
 
     private final DeviceTelemetryService telemetryService;
+    private final TelemetryWebSocketHandler telemetryWebSocketHandler;
 
-    public DeviceTelemetryController(DeviceTelemetryService telemetryService) {
+    public DeviceTelemetryController(
+            DeviceTelemetryService telemetryService,
+            TelemetryWebSocketHandler telemetryWebSocketHandler
+    ) {
         this.telemetryService = telemetryService;
+        this.telemetryWebSocketHandler = telemetryWebSocketHandler;
     }
 
     @PostMapping("/devices/{device_id}/telemetry")
@@ -100,6 +107,10 @@ public class DeviceTelemetryController {
 
         try {
             DeviceTelemetryService.TelemetryResult result = telemetryService.create(deviceId, request);
+            telemetryWebSocketHandler.broadcastTelemetry(
+                    toDeviceResponse(result.device()),
+                    result.telemetry()
+            );
             return ResponseEntity.status(HttpStatus.CREATED).body(
                     new TelemetryResponse("Telemetry successfully recorded", toTelemetryResponse(result))
             );
@@ -224,6 +235,15 @@ public class DeviceTelemetryController {
                 device.name(),
                 device.type(),
                 toTelemetryData(telemetry)
+        );
+    }
+
+    private DeviceResponse toDeviceResponse(Device device) {
+        return new DeviceResponse(
+                device.id(),
+                device.name(),
+                device.type(),
+                device.status()
         );
     }
 
