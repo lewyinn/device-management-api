@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import db from '../db/index.js';
 import { sendDeviceRegisteredTelegramNotification } from '../service/telegram.service.js';
+import { broadcastDeviceRegistered } from '../websocket/websocketServer.js';
 
 const { sequelize, Device } = db;
 const LONG_POLL_TIMEOUT_MS = 25 * 1000;
@@ -97,6 +98,8 @@ export const createDevice = async (req, res, next) => {
         });
 
         setImmediate(() => {
+            broadcastDeviceRegistered(deviceData);
+
             void sendDeviceRegisteredTelegramNotification(deviceData).catch((error) => {
                 console.error('Telegram device registration notification failed:', error.message);
             });

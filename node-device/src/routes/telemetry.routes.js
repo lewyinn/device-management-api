@@ -2,10 +2,12 @@ import express from 'express';
 import {
     createTelemetry,
     getTelemetryByDevice,
-    getLatestTelemetryByDevice
+    getLatestTelemetryByDevice,
+    getRecentTelemetry
 } from '../controller/telemetry.controller.js';
 
 const router = express.Router();
+const recentTelemetryRouter = express.Router();
 
 /**
  * @swagger
@@ -219,4 +221,40 @@ router.get(
     getLatestTelemetryByDevice
 );
 
+
+/**
+ * @swagger
+ * /telemetry/recent:
+ *   get:
+ *     summary: Get Recent Telemetry Across Devices
+ *     description: Mengambil telemetry terbaru bulan berjalan dari seluruh device untuk initial load dashboard.
+ *     tags: [Telemetry]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         description: Jumlah telemetry yang dikembalikan.
+ *         schema: { type: integer, default: 10, minimum: 1, maximum: 100 }
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *             example:
+ *               message: Latest telemetry retrieved
+ *               data:
+ *                 - device_id: 550e8400-e29b-41d4-a716-446655440000
+ *                   device_name: Sensor-Suhu
+ *                   device_type: PM2120
+ *                   ts: 1781490918553
+ *                   temperature: 27.47
+ *                   humidity: 61.1
+ *       400:
+ *         description: Bad Request
+ */
+recentTelemetryRouter.get('/recent', getRecentTelemetry);
+
 export default router;
+export { recentTelemetryRouter };

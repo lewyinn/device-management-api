@@ -1,9 +1,14 @@
+import { createServer } from 'http';
 import app from './src/index.js';
 import database from './src/db/index.js';
 import {
     startMqttTelemetrySubscriber,
     stopMqttTelemetrySubscriber
 } from './src/mqtt/telemetrySubscriber.js';
+import {
+    initializeWebSocketServer,
+    shutdownWebSocketServer
+} from './src/websocket/websocketServer.js';
 import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
@@ -18,10 +23,13 @@ const start = async () => {
     startMqttTelemetrySubscriber();
 
     const port = process.env.PORT || 3000;
+    server = createServer(app);
+    initializeWebSocketServer(server);
 
-    server = app.listen(port, () => {
+    server.listen(port, () => {
         console.log(`Server running on http://localhost:${port}`);
         console.log(`Swagger UI: http://localhost:${port}/api-docs`);
+        console.log(`WebSocket: ws://localhost:${port}/ws`);
     });
 };
 
@@ -50,6 +58,7 @@ const shutdown = async (signal) => {
     console.log(`${signal} received. Shutting down application...`);
 
     try {
+        await shutdownWebSocketServer();
         await closeHttpServer();
         await stopMqttTelemetrySubscriber();
         await database.closeDatabases();
@@ -75,6 +84,7 @@ try {
     console.error('Application startup failed:', error);
 
     try {
+        await shutdownWebSocketServer();
         await stopMqttTelemetrySubscriber();
         await database.closeDatabases();
     } catch (shutdownError) {

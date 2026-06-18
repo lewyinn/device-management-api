@@ -1,5 +1,6 @@
 import db from '../db/index.js';
 import { sendTelegramMessage } from './telegram.service.js';
+import { broadcastAlertTriggered } from '../websocket/websocketServer.js';
 
 const { AlertRule, AlertRuleState } = db;
 
@@ -120,6 +121,22 @@ export const evaluateTelemetryAlerts = async ({ device, telemetry }) => {
             deviceId: device.id,
             lastTriggeredAt: new Date(),
             lastTelemetryTs: telemetry.ts
+        });
+
+        broadcastAlertTriggered({
+            rule_id: rule.id,
+            rule_name: rule.name,
+            severity: rule.severity,
+            device_id: device.id,
+            device_name: device.name,
+            device_type: device.type,
+            metric: rule.metricKey,
+            value: telemetry[rule.metricKey],
+            operator: rule.operator,
+            threshold: rule.thresholdValue,
+            second_threshold: rule.secondThresholdValue,
+            message,
+            ts: telemetry.ts
         });
     }
 };

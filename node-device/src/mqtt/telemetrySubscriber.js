@@ -2,6 +2,7 @@ import mqtt from 'mqtt';
 import { insertTelemetry, recordMonth } from '../repository/telemetry.cassandra.repository.js';
 import { findDeviceForTelemetry } from '../repository/device.repository.js';
 import { evaluateTelemetryAlerts } from '../service/alertRuleEvaluator.service.js';
+import { broadcastTelemetry } from '../websocket/websocketServer.js';
 
 const RECONNECT_PERIOD_MS = 2000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -75,6 +76,7 @@ const handleTelemetryMessage = async (topic, payload) => {
             humidity: telemetry.humidity
         });
         console.log(`MQTT telemetry persisted for device ${deviceId} at ${telemetry.ts}`);
+        broadcastTelemetry(deviceData, telemetry);
 
         setImmediate(() => {
             void evaluateTelemetryAlerts({ device: deviceData, telemetry }).catch((error) => {

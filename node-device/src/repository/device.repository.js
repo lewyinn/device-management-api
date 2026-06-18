@@ -8,3 +8,12 @@ export const findDeviceForTelemetry = async (deviceId) => {
 
     return device.toJSON();
 };
+
+export const findAllDevicesForTelemetry = async () => {
+    const devices = await Device.findAll({
+        attributes: ['id', 'name', 'type', 'status'],
+        order: [['name', 'ASC']]
+    });
+
+    return devices.map((device) => device.toJSON());
+};

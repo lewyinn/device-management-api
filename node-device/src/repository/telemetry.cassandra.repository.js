@@ -107,3 +107,22 @@ export const findLatestTelemetry = async ({ deviceId, monthLookback = 3 }) => {
 
     return null;
 };
+
+export const findRecentTelemetryForDevice = async ({ deviceId, month, limit }) => {
+    const normalizedLimit = Math.max(1, Math.min(limit, 100));
+    const query = `
+        SELECT ts, temperature, humidity
+        FROM ${TABLE_NAME}
+        WHERE device_id = ?
+        AND record_month = ?
+        LIMIT ${normalizedLimit}
+    `;
+
+    const result = await cassandraClient.execute(
+        query,
+        [cassandraTypes.Uuid.fromString(deviceId), month],
+        { prepare: true }
+    );
+
+    return result.rows.map(telemetryPoint);
+};
