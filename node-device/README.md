@@ -8,6 +8,7 @@ Backend Express untuk mengelola device IoT, menerima telemetry dari HTTP dan MQT
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
