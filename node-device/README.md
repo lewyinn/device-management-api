@@ -160,8 +160,6 @@ Request body:
 }
 ```
 
-Untuk jalur HTTP, backend membuat `ts` dari waktu request diterima dengan `Date.now()`. Jalur ini lebih cocok untuk test manual via Swagger/Postman. Untuk real device flow, jalur utama adalah MQTT.
-
 ---
 
 ## Telemetry Read Flow
