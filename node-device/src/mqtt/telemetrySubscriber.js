@@ -1,7 +1,6 @@
 import mqtt from 'mqtt';
 import { insertTelemetry, recordMonth } from '../repository/telemetry.cassandra.repository.js';
 import { findDeviceForTelemetry } from '../repository/device.repository.js';
-import { evaluateTelemetryAlerts } from '../service/alertRuleEvaluator.service.js';
 import { broadcastTelemetry } from '../websocket/websocketServer.js';
 
 const RECONNECT_PERIOD_MS = 2000;
@@ -12,7 +11,7 @@ let mqttClient = null;
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 const isEpochMilliseconds = (value) => Number.isSafeInteger(value) && value > 0;
 
-const extractDeviceId = (topic) => {
+export const extractDeviceId = (topic) => {
     const parts = topic.split('/');
 
     if (
@@ -30,7 +29,7 @@ const extractDeviceId = (topic) => {
     return UUID_PATTERN.test(deviceId) ? deviceId : null;
 };
 
-const parseTelemetryPayload = (payload) => {
+export const parseTelemetryPayload = (payload) => {
     try {
         const body = JSON.parse(payload.toString());
         const ts = body?.ts;
@@ -47,7 +46,7 @@ const parseTelemetryPayload = (payload) => {
     }
 };
 
-const handleTelemetryMessage = async (topic, payload) => {
+export const handleTelemetryMessage = async (topic, payload) => {
     const deviceId = extractDeviceId(topic);
     if (!deviceId) {
         console.warn(`MQTT telemetry ignored because topic is invalid: ${topic}`);
@@ -77,12 +76,6 @@ const handleTelemetryMessage = async (topic, payload) => {
         });
         console.log(`MQTT telemetry persisted for device ${deviceId} at ${telemetry.ts}`);
         broadcastTelemetry(deviceData, telemetry);
-
-        setImmediate(() => {
-            void evaluateTelemetryAlerts({ device: deviceData, telemetry }).catch((error) => {
-                console.error('Failed to evaluate telemetry alert rules:', error.message);
-            });
-        });
     } catch (error) {
         console.error('Failed to persist MQTT telemetry:', error.message);
     }

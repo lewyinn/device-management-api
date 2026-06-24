@@ -2,8 +2,6 @@ import { Sequelize } from 'sequelize';
 import cassandra from 'cassandra-driver';
 import dotenv from 'dotenv';
 import defineDevice from './models/Device.js';
-import defineAlertRule from './models/AlertRule.js';
-import defineAlertRuleState from './models/AlertRuleState.js';
 
 dotenv.config({ quiet: true });
 
@@ -33,18 +31,6 @@ const sequelize = process.env.DATABASE_URL
     });
 
 const Device = defineDevice(sequelize);
-const AlertRule = defineAlertRule(sequelize);
-const AlertRuleState = defineAlertRuleState(sequelize);
-
-AlertRule.hasMany(AlertRuleState, {
-    foreignKey: 'ruleId',
-    as: 'states',
-    onDelete: 'CASCADE'
-});
-AlertRuleState.belongsTo(AlertRule, {
-    foreignKey: 'ruleId',
-    as: 'rule'
-});
 
 const cassandraContactPoints = (process.env.CASSANDRA_CONTACT_POINTS || '127.0.0.1')
     .split(',')
@@ -132,8 +118,6 @@ const closeDatabases = async () => {
 export default {
     sequelize,
     Device,
-    AlertRule,
-    AlertRuleState,
     cassandraClient,
     cassandraTypes: cassandra.types,
     authenticateSqlDatabase,

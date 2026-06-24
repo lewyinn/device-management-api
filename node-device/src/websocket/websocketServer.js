@@ -4,7 +4,7 @@ const WEBSOCKET_PATH = '/ws';
 const HEARTBEAT_INTERVAL_MS = 30000;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SHARED_CHANNELS = new Set(['telemetry', 'devices', 'alerts']);
+const SHARED_CHANNELS = new Set(['telemetry', 'devices']);
 
 let webSocketServer = null;
 let heartbeatTimer = null;
@@ -28,7 +28,7 @@ const isValidChannel = (channel) => {
 
     const [prefix, deviceId] = channel.split(':');
     return (
-        ['device_telemetry', 'device_alerts'].includes(prefix) &&
+        prefix === 'device_telemetry' &&
         UUID_PATTERN.test(deviceId || '')
     );
 };
@@ -187,18 +187,6 @@ export const broadcastDeviceRegistered = (device) => {
             status: device.status
         }
     });
-};
-
-export const broadcastAlertTriggered = (alert) => {
-    const event = {
-        type: 'alert_triggered',
-        data: alert
-    };
-
-    broadcastToChannels([
-        'alerts',
-        `device_alerts:${alert.device_id}`
-    ], event);
 };
 
 export const shutdownWebSocketServer = async () => {

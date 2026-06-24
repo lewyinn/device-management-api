@@ -3,16 +3,12 @@ import {
     createDevice,
     getDevices,
     getDeviceById,
-    getLongPollingDevices,
-    getShortPollingDevices,
     updateDevice,
     patchDevice,
     deleteDevice
 } from '../controller/device.controller.js';
 import {
     deviceReadRateLimiter,
-    deviceReadThrottler,
-    deviceRegistrationRateLimiter,
     deviceRegistrationThrottler
 } from '../middleware/deviceHttpProtection.middleware.js';
 
@@ -58,6 +54,17 @@ const router = express.Router();
  *             example:
  *               error: Validation failed
  *               details: Attribute 'name' is required
+ *       429:
+ *         description: Too Many Requests
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *             example:
+ *               error: Request throttled
+ *               type: throttling
+ *               details: Device registration endpoint only accepts one request every 1000 milliseconds
+ *               retry_after_ms: 953
  *       500:
  *         description: Internal server error
  *         content:
@@ -69,7 +76,6 @@ const router = express.Router();
  */
 router.post(
     '/',
-    // deviceRegistrationRateLimiter,
     deviceRegistrationThrottler,
     createDevice
 );
@@ -120,6 +126,17 @@ router.post(
  *             example:
  *               error: Validation failed
  *               details: Query parameter 'page' or 'limit' must be a valid number
+ *       429:
+ *         description: Too Many Requests
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *             example:
+ *               error: Rate limit exceeded
+ *               type: rate_limiting
+ *               details: Device read endpoint only allows 60 requests every 60 seconds
+ *               retry_after_seconds: 59
  *       500:
  *         description: Internal server error
  *         content:
@@ -131,20 +148,9 @@ router.post(
  */
 router.get(
     '/',
-    // deviceReadThrottler,
     deviceReadRateLimiter,
     getDevices
 );
-
-// router.get(
-//     '/short-poll',
-//     getShortPollingDevices
-// );
-
-// router.get(
-//     '/long-poll',
-//     getLongPollingDevices
-// );
 
 /**
  * @swagger
@@ -201,7 +207,6 @@ router.get(
  */
 router.get(
     '/:id',
-    deviceReadRateLimiter,
     getDeviceById
 );
 

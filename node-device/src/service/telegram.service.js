@@ -49,5 +49,5 @@ export const sendTelegramMessage = async (message) => {
 };
 
 export const sendDeviceRegisteredTelegramNotification = async (device) => {
-    await sendTelegramMessage(formatDeviceRegisteredMessage(device));
+    return sendTelegramMessage(formatDeviceRegisteredMessage(device));
 };

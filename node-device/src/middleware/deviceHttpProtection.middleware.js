@@ -87,23 +87,10 @@ const createThrottler = ({
     };
 };
 
-export const deviceRegistrationRateLimiter = createRateLimiter({
-    name: 'Device registration endpoint',
-    windowMs: 60 * 1000,
-    maxRequests: 10,
-    keyGenerator: getClientIp
-});
-
 export const deviceReadRateLimiter = createRateLimiter({
     name: 'Device read endpoint',
     windowMs: 60 * 1000,
     maxRequests: 60
-});
-
-export const deviceReadThrottler = createThrottler({
-    name: 'Device read endpoint',
-    intervalMs: 1000,
-    keyGenerator: getClientIp
 });
 
 export const deviceRegistrationThrottler = createThrottler({
@@ -111,5 +98,4 @@ export const deviceRegistrationThrottler = createThrottler({
     intervalMs: 1000,
     keyGenerator: getClientIp
 });
-
 
