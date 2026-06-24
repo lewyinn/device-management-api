@@ -20,8 +20,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.device.management_api.repository.CassandraTelemetryRepository;
-import com.device.management_api.repository.DeviceRepository;
+import com.device.management_api.repository.cassandra.CassandraTelemetryRepository;
+import com.device.management_api.repository.postgres.DeviceRepository;
 import com.device.management_api.service.DeviceTelemetryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

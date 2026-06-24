@@ -1,17 +1,22 @@
-package com.device.management_api.entity;
+package com.device.management_api.model.postgres;
 
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(
-    name = "devices",
-    indexes = @Index(name = "idx_device_name", columnList = "name")
+        name = "devices",
+        indexes = @Index(name = "idx_device_name", columnList = "name")
 )
 public class Device {
     @Id
@@ -23,8 +28,10 @@ public class Device {
     @Column(nullable = false)
     private String type;
 
-    @Column(nullable = false)
-    private String status;
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "enum_devices_status")
+    private DeviceStatus status;
 
     public Device() {
     }
@@ -33,7 +40,7 @@ public class Device {
         this.id = id;
         this.name = name;
         this.type = type;
-        this.status = status;
+        this.status = DeviceStatus.from(status);
     }
 
     public String id() {
@@ -49,7 +56,7 @@ public class Device {
     }
 
     public String status() {
-        return status;
+        return status == null ? null : status.name();
     }
 
     public UUID getId() {
@@ -77,10 +84,19 @@ public class Device {
     }
 
     public String getStatus() {
-        return status;
+        return status();
     }
 
     public void setStatus(String status) {
-        this.status = status;
+        this.status = DeviceStatus.from(status);
+    }
+
+    public enum DeviceStatus {
+        active,
+        inactive;
+
+        public static DeviceStatus from(String value) {
+            return DeviceStatus.valueOf(value);
+        }
     }
 }

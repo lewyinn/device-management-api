@@ -17,8 +17,8 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import com.device.management_api.dto.device.DeviceResponse;
-import com.device.management_api.dto.telemetry.TelemetryReading;
+import com.device.management_api.model.cassandra.TelemetryReading;
+import com.device.management_api.model.postgres.Device;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -93,7 +93,7 @@ public class TelemetryWebSocketHandler extends TextWebSocketHandler {
         logger.warn("WebSocket transport error for session {}: {}", session.getId(), exception.getMessage());
     }
 
-    public void broadcastTelemetry(DeviceResponse device, TelemetryReading telemetry) {
+    public void broadcastTelemetry(Device device, TelemetryReading telemetry) {
         Map<String, Object> data = Map.of(
                 "device_id", device.id(),
                 "device_name", device.name(),
@@ -115,7 +115,7 @@ public class TelemetryWebSocketHandler extends TextWebSocketHandler {
         );
     }
 
-    public void broadcastDeviceRegistered(DeviceResponse device) {
+    public void broadcastDeviceRegistered(Device device) {
         broadcast(
                 Set.of(DEVICE_REGISTERED_CHANNEL),
                 Map.of(

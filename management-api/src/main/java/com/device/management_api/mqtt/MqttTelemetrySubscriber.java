@@ -14,11 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.stereotype.Component;
 
-import com.device.management_api.dto.device.DeviceResponse;
-import com.device.management_api.dto.telemetry.TelemetryReading;
-import com.device.management_api.entity.Device;
-import com.device.management_api.repository.CassandraTelemetryRepository;
-import com.device.management_api.repository.DeviceRepository;
+import com.device.management_api.model.cassandra.TelemetryReading;
+import com.device.management_api.model.postgres.Device;
+import com.device.management_api.repository.cassandra.CassandraTelemetryRepository;
+import com.device.management_api.repository.postgres.DeviceRepository;
 import com.device.management_api.websocket.TelemetryWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
@@ -172,6 +171,12 @@ public class MqttTelemetrySubscriber {
         }
 
         try {
+            Device device = deviceRepository.findById(deviceId).orElse(null);
+            if (device == null) {
+                System.out.println("MQTT telemetry ignored because device ID " + deviceId + " not found");
+                return;
+            }
+
             TelemetryReading telemetry = telemetryRepository.insert(
                     deviceId,
                     recordMonth(payload.ts()),
@@ -180,22 +185,7 @@ public class MqttTelemetrySubscriber {
                     payload.humidity()
             );
             System.out.println("MQTT telemetry persisted for device " + deviceId + " at " + payload.ts());
-
-            Device device = deviceRepository.findById(deviceId).orElse(null);
-            if (device == null) {
-                System.out.println("WebSocket telemetry ignored because device ID " + deviceId + " not found");
-                return;
-            }
-
-            telemetryWebSocketHandler.broadcastTelemetry(
-                    new DeviceResponse(
-                            device.id(),
-                            device.name(),
-                            device.type(),
-                            device.status()
-                    ),
-                    telemetry
-            );
+            telemetryWebSocketHandler.broadcastTelemetry(device, telemetry);
         } catch (RuntimeException error) {
             System.out.println("Failed to persist MQTT telemetry: " + error.getMessage());
         }

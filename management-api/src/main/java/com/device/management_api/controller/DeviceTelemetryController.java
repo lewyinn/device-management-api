@@ -1,6 +1,7 @@
 package com.device.management_api.controller;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,34 +13,28 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.device.management_api.dto.device.DeviceResponse;
-import com.device.management_api.dto.telemetry.CreateTelemetryRequest;
-import com.device.management_api.dto.telemetry.TelemetryDataResponse;
-import com.device.management_api.dto.telemetry.TelemetryDeviceResponse;
-import com.device.management_api.dto.telemetry.TelemetryListResponse;
-import com.device.management_api.dto.telemetry.TelemetryReading;
-import com.device.management_api.dto.telemetry.TelemetryResponse;
-import com.device.management_api.entity.Device;
-import com.device.management_api.exception.ApiException;
+import com.device.management_api.model.cassandra.TelemetryReading;
+import com.device.management_api.model.postgres.Device;
 import com.device.management_api.service.DeviceTelemetryService;
 import com.device.management_api.websocket.TelemetryWebSocketHandler;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 @RestController
 @Tag(name = "Telemetry")
 @RequestMapping("/api/v1")
 public class DeviceTelemetryController {
-
     private final DeviceTelemetryService telemetryService;
     private final TelemetryWebSocketHandler telemetryWebSocketHandler;
 
@@ -52,10 +47,16 @@ public class DeviceTelemetryController {
     }
 
     @PostMapping("/devices/{device_id}/telemetry")
-    @Operation(summary = "Create Device Telemetry")
+    @Operation(
+            summary = "Create Device Telemetry",
+            description = "Menyimpan telemetry device ke Cassandra."
+    )
     @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "Created",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = TelemetryResponse.class),
+        @ApiResponse(
+                responseCode = "201",
+                description = "Created",
+                content = @Content(
+                        mediaType = "application/json",
                         examples = @ExampleObject(value = """
                                 {
                                   "message": "Telemetry successfully recorded",
@@ -64,31 +65,82 @@ public class DeviceTelemetryController {
                                     "deviceName": "Sensor-Suhu",
                                     "deviceType": "PM2120",
                                     "data": {
-                                      "ts": 1717488000000,
+                                      "ts": 1781754587451,
                                       "temperature": 28.5,
                                       "humidity": 75.2
                                     }
                                   }
                                 }
-                                """))),
-        @ApiResponse(responseCode = "400", description = "Bad Request",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Validation failed\",\"details\":\"Attributes 'values.temperature' and 'values.humidity' must be numbers\"}"))),
-        @ApiResponse(responseCode = "404", description = "Device Not Found",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Device ID 550e8400-e29b-41d4-a716-446655440000 not found\"}"))),
-        @ApiResponse(responseCode = "409", description = "Duplicate Telemetry Timestamp",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Duplicate telemetry timestamp\",\"details\":\"Telemetry for device ID 550e8400-e29b-41d4-a716-446655440000 at ts 1717488000000 already exists\"}"))),
-        @ApiResponse(responseCode = "500", description = "Internal server error",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
+                                """)
+                )
+        ),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Bad Request",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = {
+                                @ExampleObject(
+                                        name = "invalidDeviceId",
+                                        summary = "Invalid device ID",
+                                        value = """
+                                                {
+                                                  "error": "Validation failed",
+                                                  "details": "Device ID must be a valid UUID"
+                                                }
+                                                """
+                                ),
+                                @ExampleObject(
+                                        name = "invalidTelemetryPayload",
+                                        summary = "Invalid telemetry payload",
+                                        value = """
+                                                {
+                                                  "error": "Validation failed",
+                                                  "details": "Attributes 'values.temperature' and 'values.humidity' must be numbers"
+                                                }
+                                                """
+                                )
+                        }
+                )
+        ),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Device Not Found",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                                }
+                                """)
+                )
+        ),
+        @ApiResponse(
+                responseCode = "500",
+                description = "Internal Server Error",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Internal server error"
+                                }
+                                """)
+                )
+        )
     })
     public ResponseEntity<?> create(
-            @PathVariable("device_id") String deviceId,
-            @RequestBody(
+            @Parameter(
+                    in = ParameterIn.PATH,
+                    name = "device_id",
+                    description = "ID device.",
                     required = true,
-                    content = @Content(mediaType = "application/json",
+                    example = "550e8400-e29b-41d4-a716-446655440000"
+            )
+            @PathVariable("device_id") String deviceId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
                             examples = @ExampleObject(value = """
                                     {
                                       "values": {
@@ -96,7 +148,8 @@ public class DeviceTelemetryController {
                                         "humidity": 75.2
                                       }
                                     }
-                                    """))
+                                    """)
+                    )
             )
             @Valid @org.springframework.web.bind.annotation.RequestBody CreateTelemetryRequest request,
             BindingResult validationResult
@@ -106,28 +159,39 @@ public class DeviceTelemetryController {
         }
 
         try {
-            DeviceTelemetryService.TelemetryResult result = telemetryService.create(deviceId, request);
-            telemetryWebSocketHandler.broadcastTelemetry(
-                    toDeviceResponse(result.device()),
-                    result.telemetry()
+            DeviceTelemetryService.TelemetryResult result = telemetryService.create(
+                    deviceId,
+                    request.values().temperature(),
+                    request.values().humidity()
             );
+            telemetryWebSocketHandler.broadcastTelemetry(result.device(), result.telemetry());
+
             return ResponseEntity.status(HttpStatus.CREATED).body(
-                    new TelemetryResponse("Telemetry successfully recorded", toTelemetryResponse(result))
+                    new TelemetryResponse(
+                            "Telemetry successfully recorded",
+                            telemetryDeviceResponse(result)
+                    )
             );
-        } catch (ApiException error) {
-            return apiError(error);
-        } catch (Exception error) {
+        } catch (IllegalArgumentException error) {
+            return validationError(error.getMessage());
+        } catch (NoSuchElementException error) {
+            return notFound(error.getMessage());
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
 
     @GetMapping("/devices/{device_id}/telemetry")
-    @Operation(summary = "Get Device Telemetry")
+    @Operation(
+            summary = "Get Device Telemetry",
+            description = "Mengambil telemetry Cassandra berdasarkan rentang bulan."
+    )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK",
+        @ApiResponse(
+                responseCode = "200",
+                description = "OK",
                 content = @Content(
                         mediaType = "application/json",
-                        schema = @Schema(implementation = TelemetryListResponse.class),
                         examples = @ExampleObject(value = """
                                 {
                                   "message": "Success retrieving telemetry",
@@ -136,39 +200,113 @@ public class DeviceTelemetryController {
                                   "deviceType": "PM2120",
                                   "data": [
                                     {
-                                      "ts": 1717488000000,
+                                      "ts": 1781490918553,
                                       "temperature": 28.5,
                                       "humidity": 75.2
                                     },
                                     {
-                                      "ts": 1717488600000,
-                                      "temperature": 28.7,
-                                      "humidity": 74.8
+                                      "ts": 1781490818553,
+                                      "temperature": 27.3,
+                                      "humidity": 80.1
                                     }
                                   ]
                                 }
                                 """)
-                )),
-        @ApiResponse(responseCode = "400", description = "Bad Request",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Validation failed\",\"details\":\"Device ID must be a valid UUID\"}"))),
-        @ApiResponse(responseCode = "404", description = "Device Not Found",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Device ID 550e8400-e29b-41d4-a716-446655440000 not found\"}"))),
-        @ApiResponse(responseCode = "500", description = "Internal server error",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
+                )
+        ),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Bad Request",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = {
+                                @ExampleObject(
+                                        name = "invalidDeviceId",
+                                        summary = "Invalid device ID",
+                                        value = """
+                                                {
+                                                  "error": "Validation failed",
+                                                  "details": "Device ID must be a valid UUID"
+                                                }
+                                                """
+                                ),
+                                @ExampleObject(
+                                        name = "invalidMonth",
+                                        summary = "Invalid month format",
+                                        value = """
+                                                {
+                                                  "error": "Validation failed",
+                                                  "details": "Query parameter 'start_month' and 'end_month' must use YYYY-MM format"
+                                                }
+                                                """
+                                ),
+                                @ExampleObject(
+                                        name = "invalidMonthRange",
+                                        summary = "Invalid month range",
+                                        value = """
+                                                {
+                                                  "error": "Validation failed",
+                                                  "details": "start_month cannot be after end_month"
+                                                }
+                                                """
+                                )
+                        }
+                )
+        ),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Device Not Found",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                                }
+                                """)
+                )
+        ),
+        @ApiResponse(
+                responseCode = "500",
+                description = "Internal Server Error",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Internal server error"
+                                }
+                                """)
+                )
+        )
     })
     public ResponseEntity<?> findAllByDeviceId(
+            @Parameter(
+                    in = ParameterIn.PATH,
+                    name = "device_id",
+                    description = "ID device.",
+                    required = true,
+                    example = "550e8400-e29b-41d4-a716-446655440000"
+            )
             @PathVariable("device_id") String deviceId,
-            @RequestParam(required = false, name = "start_month", defaultValue = "2026-01") String startMonth,
-            @RequestParam(required = false, name = "end_month", defaultValue = "2026-12") String endMonth
+            @Parameter(
+                    in = ParameterIn.QUERY,
+                    name = "start_month",
+                    description = "Bulan awal data telemetry dengan format YYYY-MM. Default 2026-01.",
+                    example = "2026-01"
+            )
+            @RequestParam(name = "start_month", defaultValue = "2026-01") String startMonth,
+            @Parameter(
+                    in = ParameterIn.QUERY,
+                    name = "end_month",
+                    description = "Bulan akhir data telemetry dengan format YYYY-MM. Default 2026-12.",
+                    example = "2026-12"
+            )
+            @RequestParam(name = "end_month", defaultValue = "2026-12") String endMonth
     ) {
         try {
-            DeviceTelemetryService.TelemetryListResult result = telemetryService.findAllByDeviceId(deviceId, startMonth, endMonth);
-            List<TelemetryDataResponse> data = result.telemetries()
-                    .stream()
-                    .map(this::toTelemetryData)
+            DeviceTelemetryService.TelemetryListResult result =
+                    telemetryService.findAllByDeviceId(deviceId, startMonth, endMonth);
+            List<TelemetryDataResponse> data = result.telemetries().stream()
+                    .map(this::telemetryDataResponse)
                     .toList();
 
             return ResponseEntity.ok(new TelemetryListResponse(
@@ -178,76 +316,137 @@ public class DeviceTelemetryController {
                     result.device().type(),
                     data
             ));
-        } catch (ApiException error) {
-            return apiError(error);
-        } catch (Exception error) {
+        } catch (IllegalArgumentException error) {
+            return validationError(error.getMessage());
+        } catch (NoSuchElementException error) {
+            return notFound(error.getMessage());
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
 
     @GetMapping("/devices/{device_id}/telemetry/latest")
-    @Operation(summary = "Get Latest Device Telemetry")
+    @Operation(
+            summary = "Get Latest Device Telemetry",
+            description = "Mengambil telemetry terbaru milik satu device berdasarkan nilai ts terbesar."
+    )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK",
+        @ApiResponse(
+                responseCode = "200",
+                description = "OK",
                 content = @Content(
                         mediaType = "application/json",
-                        schema = @Schema(implementation = TelemetryResponse.class),
                         examples = @ExampleObject(value = """
                                 {
-                                        "message": "Latest telemetry found",
-                                        "device_id": "550e8400-e29b-41d4-a716-446655440000",
-                                        "deviceName": "Sensor-Suhu",
-                                        "deviceType": "PM2120",
-                                        "data": {
-                                                "ts": 1717488600000,
-                                                "temperature": 28.7,
-                                                "humidity": 74.8
+                                  "message": "Latest telemetry found",
+                                  "data": {
+                                    "device_id": "550e8400-e29b-41d4-a716-446655440000",
+                                    "deviceName": "Sensor-Suhu",
+                                    "deviceType": "PM2120",
+                                    "data": {
+                                      "ts": 1781490918553,
+                                      "temperature": 28.5,
+                                      "humidity": 75.2
+                                    }
                                   }
                                 }
                                 """)
-                )),
-        @ApiResponse(responseCode = "400", description = "Bad Request",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Validation failed\",\"details\":\"Device ID must be a valid UUID\"}"))),
-        @ApiResponse(responseCode = "404", description = "Device or Telemetry Not Found",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Telemetry for device ID 550e8400-e29b-41d4-a716-446655440000 not found\"}"))),
-        @ApiResponse(responseCode = "500", description = "Internal server error",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class),
-                        examples = @ExampleObject(value = "{\"error\":\"Internal server error\"}")))
+                )
+        ),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Bad Request",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Validation failed",
+                                  "details": "Device ID must be a valid UUID"
+                                }
+                                """)
+                )
+        ),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Device or Telemetry Not Found",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = {
+                                @ExampleObject(
+                                        name = "deviceNotFound",
+                                        summary = "Device not found",
+                                        value = """
+                                                {
+                                                  "error": "Device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                                                }
+                                                """
+                                ),
+                                @ExampleObject(
+                                        name = "telemetryNotFound",
+                                        summary = "Telemetry not found",
+                                        value = """
+                                                {
+                                                  "error": "Telemetry for device ID 550e8400-e29b-41d4-a716-446655440000 not found"
+                                                }
+                                                """
+                                )
+                        }
+                )
+        ),
+        @ApiResponse(
+                responseCode = "500",
+                description = "Internal Server Error",
+                content = @Content(
+                        mediaType = "application/json",
+                        examples = @ExampleObject(value = """
+                                {
+                                  "error": "Internal server error"
+                                }
+                                """)
+                )
+        )
     })
-    public ResponseEntity<?> findLatestByDeviceId(@PathVariable("device_id") String deviceId) {
+    public ResponseEntity<?> findLatestByDeviceId(
+            @Parameter(
+                    in = ParameterIn.PATH,
+                    name = "device_id",
+                    description = "ID device.",
+                    required = true,
+                    example = "550e8400-e29b-41d4-a716-446655440000"
+            )
+            @PathVariable("device_id") String deviceId
+    ) {
         try {
-            DeviceTelemetryService.TelemetryResult result = telemetryService.findLatestByDeviceId(deviceId);
-            return ResponseEntity.ok(new TelemetryResponse("Latest telemetry found", toTelemetryResponse(result)));
-        } catch (ApiException error) {
-            return apiError(error);
-        } catch (Exception error) {
+            DeviceTelemetryService.TelemetryResult result =
+                    telemetryService.findLatestByDeviceId(deviceId);
+            return ResponseEntity.ok(
+                    new TelemetryResponse(
+                            "Latest telemetry found",
+                            telemetryDeviceResponse(result)
+                    )
+            );
+        } catch (IllegalArgumentException error) {
+            return validationError(error.getMessage());
+        } catch (NoSuchElementException error) {
+            return notFound(error.getMessage());
+        } catch (RuntimeException error) {
             return internalError();
         }
     }
 
-    private TelemetryDeviceResponse toTelemetryResponse(DeviceTelemetryService.TelemetryResult result) {
+    private TelemetryDeviceResponse telemetryDeviceResponse(
+            DeviceTelemetryService.TelemetryResult result
+    ) {
         Device device = result.device();
-        TelemetryReading telemetry = result.telemetry();
         return new TelemetryDeviceResponse(
                 device.id(),
                 device.name(),
                 device.type(),
-                toTelemetryData(telemetry)
+                telemetryDataResponse(result.telemetry())
         );
     }
 
-    private DeviceResponse toDeviceResponse(Device device) {
-        return new DeviceResponse(
-                device.id(),
-                device.name(),
-                device.type(),
-                device.status()
-        );
-    }
-
-    private TelemetryDataResponse toTelemetryData(TelemetryReading telemetry) {
+    private TelemetryDataResponse telemetryDataResponse(TelemetryReading telemetry) {
         return new TelemetryDataResponse(
                 telemetry.ts(),
                 telemetry.temperature(),
@@ -259,15 +458,70 @@ public class DeviceTelemetryController {
         String details = validationResult.getFieldErrors().isEmpty()
                 ? "Invalid request payload"
                 : validationResult.getFieldErrors().get(0).getDefaultMessage();
-        return ResponseEntity.badRequest().body(new ErrorResponse("Validation failed", details));
+        return validationError(details);
     }
 
-    private ResponseEntity<ErrorResponse> apiError(ApiException error) {
-        return ResponseEntity.status(error.getStatus()).body(new ErrorResponse(error.getError(), error.getDetails()));
+    private ResponseEntity<ErrorResponse> validationError(String details) {
+        return ResponseEntity
+                .badRequest()
+                .body(new ErrorResponse("Validation failed", details));
+    }
+
+    private ResponseEntity<ErrorResponse> notFound(String message) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(message, null));
     }
 
     private ResponseEntity<ErrorResponse> internalError() {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponse("Internal server error", null));
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("Internal server error", null));
+    }
+
+    public record CreateTelemetryRequest(
+            @Valid
+            @NotNull(message = "Attributes 'values.temperature' and 'values.humidity' must be numbers")
+            TelemetryValuesRequest values
+    ) {
+    }
+
+    public record TelemetryValuesRequest(
+            @NotNull(message = "Attributes 'values.temperature' and 'values.humidity' must be numbers")
+            Double temperature,
+            @NotNull(message = "Attributes 'values.temperature' and 'values.humidity' must be numbers")
+            Double humidity
+    ) {
+    }
+
+    public record TelemetryDataResponse(
+            Long ts,
+            Double temperature,
+            Double humidity
+    ) {
+    }
+
+    public record TelemetryDeviceResponse(
+            @JsonProperty("device_id") String deviceId,
+            String deviceName,
+            String deviceType,
+            TelemetryDataResponse data
+    ) {
+    }
+
+    public record TelemetryResponse(
+            String message,
+            TelemetryDeviceResponse data
+    ) {
+    }
+
+    public record TelemetryListResponse(
+            String message,
+            @JsonProperty("device_id") String deviceId,
+            String deviceName,
+            String deviceType,
+            List<TelemetryDataResponse> data
+    ) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

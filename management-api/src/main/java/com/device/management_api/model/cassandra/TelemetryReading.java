@@ -1,4 +1,4 @@
-package com.device.management_api.dto.telemetry;
+package com.device.management_api.model.cassandra;
 
 public record TelemetryReading(
         Long ts,

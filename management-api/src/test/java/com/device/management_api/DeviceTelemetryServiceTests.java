@@ -7,11 +7,12 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.device.management_api.exception.ApiException;
 import com.device.management_api.service.DeviceTelemetryService;
+import com.device.management_api.service.impl.DeviceTelemetryServiceImpl;
 
 class DeviceTelemetryServiceTests {
-    private final DeviceTelemetryService telemetryService = new DeviceTelemetryService(null, null);
+    private final DeviceTelemetryService telemetryService =
+            new DeviceTelemetryServiceImpl(null, null);
 
     @Test
     void recordMonthUsesEpochMilliseconds() {
@@ -28,7 +29,10 @@ class DeviceTelemetryServiceTests {
 
     @Test
     void monthsBetweenRejectsInvalidRange() {
-        assertThrows(ApiException.class, () -> telemetryService.monthsBetween("2026-01-01", "2026-12"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> telemetryService.monthsBetween("2026-01-01", "2026-12")
+        );
     }
 
     @Test
