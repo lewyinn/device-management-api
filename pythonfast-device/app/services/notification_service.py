@@ -2,13 +2,11 @@ import html
 import os
 
 import httpx
-
+from dotenv import load_dotenv
 
 TELEGRAM_API_BASE_URL = "https://api.telegram.org"
 
-
-def is_telegram_configured() -> bool:
-    return bool(os.getenv("TELEGRAM_BOT_TOKEN")) and bool(os.getenv("TELEGRAM_CHAT_ID"))
+load_dotenv()
 
 
 def format_device_registered_message(device: dict) -> str:
@@ -24,19 +22,21 @@ def format_device_registered_message(device: dict) -> str:
     )
 
 
-async def send_device_registered_telegram_notification(device: dict):
-    if not is_telegram_configured():
-        print("Telegram notifications are not configured")
-        return
-
+async def send_device_registered_notification(device: dict):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/sendMessage"
+
+    if not bot_token or not chat_id:
+        print("Telegram notifications are not configured")
+        return
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
-                url,
+                (
+                    f"{TELEGRAM_API_BASE_URL}/bot"
+                    f"{bot_token}/sendMessage"
+                ),
                 json={
                     "chat_id": chat_id,
                     "text": format_device_registered_message(device),

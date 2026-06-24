@@ -5,7 +5,8 @@ from fastapi import HTTPException, Request, status
 rate_limit_store = {}
 throttle_store = {}
 
-def client_ip(request: Request) -> str:
+
+def get_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
@@ -17,6 +18,7 @@ def client_ip(request: Request) -> str:
 
 
 def check_rate_limit(
+    *,
     endpoint_name: str,
     rate_limit_key: str,
     ip_address: str,
@@ -59,6 +61,7 @@ def check_rate_limit(
 
 
 def check_throttle(
+    *,
     endpoint_name: str,
     throttle_key: str,
     ip_address: str,
@@ -87,47 +90,20 @@ def check_throttle(
     throttle_store[store_key] = now
 
 
-async def register_rate_limit(request: Request):
-    ip_address = client_ip(request)
-
-    check_rate_limit(
-        endpoint_name="Device registration endpoint",
-        rate_limit_key="device_registration",
-        ip_address=ip_address,
-        max_requests=10,
-        window_seconds=60,
-    )
-
-
 async def register_throttling(request: Request):
-    ip_address = client_ip(request)
-
     check_throttle(
         endpoint_name="Device registration endpoint",
         throttle_key="device_registration",
-        ip_address=ip_address,
+        ip_address=get_client_ip(request),
         throttle_seconds=1,
     )
 
 
 async def read_rate_limit(request: Request):
-    ip_address = client_ip(request)
-
     check_rate_limit(
         endpoint_name="Device read endpoint",
         rate_limit_key="device_read",
-        ip_address=ip_address,
+        ip_address=get_client_ip(request),
         max_requests=3,
         window_seconds=60,
-    )
-
-
-async def read_throttling(request: Request):
-    ip_address = client_ip(request)
-
-    check_throttle(
-        endpoint_name="Device read endpoint",
-        throttle_key="device_read",
-        ip_address=ip_address,
-        throttle_seconds=1,
     )

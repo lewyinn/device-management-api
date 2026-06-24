@@ -8,29 +8,33 @@ from uuid import UUID
 from dotenv import load_dotenv
 from fastapi_mqtt import FastMQTT, MQTTConfig
 
-from app.core.cassandra import get_telemetry_repository
-from app.core.database import SessionLocal
-from app.core.websocket import websocket_manager
-from app.models import Device
+from app.core.database_pg import SessionLocal
+from app.services.device_service import device_service, serialize_device
+from app.services.telemetry_service import serialize_telemetry, telemetry_service
+from app.websocket.websocket import websocket_manager
 
 load_dotenv()
 
 RECONNECT_DELAY_SECONDS = 2
+MQTT_BROKER_URL = os.getenv("MQTT_BROKER_URL", "mqtt://127.0.0.1:1883")
+MQTT_TELEMETRY_TOPIC = os.getenv(
+    "MQTT_TELEMETRY_TOPIC",
+    "gedung-solu/monitoring/lantai-1/devices/+/telemetry",
+)
 
-MQTT_TOPIC = os.getenv("MQTT_TELEMETRY_TOPIC")
 mqtt_started = False
 mqtt_retry_task: asyncio.Task | None = None
 
 
-def parse_broker_url(value: str) -> tuple[str, int]:
-    broker = urlparse(value)
+def parse_broker_url(broker_url: str) -> tuple[str, int]:
+    broker = urlparse(broker_url)
     if broker.scheme != "mqtt" or not broker.hostname:
         raise RuntimeError("MQTT_BROKER_URL must use mqtt://host:port format")
 
     return broker.hostname, broker.port or 1883
 
 
-MQTT_HOST, MQTT_PORT = parse_broker_url(os.getenv("MQTT_BROKER_URL"))
+MQTT_HOST, MQTT_PORT = parse_broker_url(MQTT_BROKER_URL)
 
 fast_mqtt = FastMQTT(
     config=MQTTConfig(
@@ -43,17 +47,8 @@ fast_mqtt = FastMQTT(
 )
 
 
-def is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def is_epoch_milliseconds(value):
-    return isinstance(value, int) and not isinstance(value, bool) and value > 0
-
-
 def extract_device_id(topic: str) -> UUID | None:
     parts = topic.split("/")
-
     if (
         len(parts) != 6
         or parts[0] != "gedung-solu"
@@ -76,15 +71,22 @@ def parse_telemetry_payload(payload: bytes) -> dict | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
 
-    ts = body.get("ts") if isinstance(body, dict) else None
-    temperature = body.get("temperature") if isinstance(body, dict) else None
-    humidity = body.get("humidity") if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        return None
 
-    if not is_epoch_milliseconds(ts) or not is_number(temperature) or not is_number(humidity):
+    timestamp = body.get("ts")
+    temperature = body.get("temperature")
+    humidity = body.get("humidity")
+
+    if type(timestamp) is not int or timestamp <= 0:
+        return None
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+        return None
+    if isinstance(humidity, bool) or not isinstance(humidity, (int, float)):
         return None
 
     return {
-        "ts": ts,
+        "ts": timestamp,
         "temperature": float(temperature),
         "humidity": float(humidity),
     }
@@ -94,70 +96,58 @@ def persist_telemetry(topic: str, payload: bytes):
     device_id = extract_device_id(topic)
     if device_id is None:
         print(f"MQTT telemetry ignored because topic is invalid: {topic}")
-        return
-
-    telemetry = parse_telemetry_payload(payload)
-    if telemetry is None:
-        print(f"MQTT telemetry ignored because payload is invalid for topic: {topic}")
-        return
-
-    try:
-        get_telemetry_repository().insert(
-            device_id=device_id,
-            ts=telemetry["ts"],
-            temperature=telemetry["temperature"],
-            humidity=telemetry["humidity"],
-        )
-        print(f"MQTT telemetry persisted for device {device_id} at {telemetry['ts']}")
-        with SessionLocal() as db:
-            device = db.query(Device).filter(Device.id == str(device_id)).first()
-
-            if device is None:
-                print(f"WebSocket telemetry ignored because device ID {device_id} not found")
-                return None
-
-            return {
-                "device": {
-                    "id": str(device.id),
-                    "name": device.name,
-                    "type": device.type,
-                    "status": device.status,
-                },
-                "telemetry": telemetry,
-            }
-    except Exception as error:
-        print(f"Failed to persist MQTT telemetry: {error}")
         return None
+
+    payload_data = parse_telemetry_payload(payload)
+    if payload_data is None:
+        print(f"MQTT telemetry ignored because payload is invalid for topic: {topic}")
+        return None
+
+    with SessionLocal() as database:
+        device = device_service.get(database, device_id)
+        telemetry = telemetry_service.insert(
+            device_id=device_id,
+            ts=payload_data["ts"],
+            temperature=payload_data["temperature"],
+            humidity=payload_data["humidity"],
+        )
+
+        print(f"MQTT telemetry persisted for device {device_id} at {telemetry.ts}")
+        return {
+            "device": serialize_device(device),
+            "telemetry": serialize_telemetry(telemetry),
+        }
 
 
 @fast_mqtt.on_connect()
 def handle_connect(client, flags, rc, properties):
-    print(f"MQTT connected to mqtt://{MQTT_HOST}:{MQTT_PORT}")
+    print(f"MQTT connected to {MQTT_BROKER_URL}")
 
 
 @fast_mqtt.on_disconnect()
 def handle_disconnect(client, packet, exc=None):
     if exc:
         print(f"MQTT disconnected unexpectedly: {exc}")
-        return
-
-    print("MQTT disconnected")
+    else:
+        print("MQTT disconnected")
 
 
 @fast_mqtt.on_subscribe()
 def handle_subscribe(client, mid, qos, properties):
-    print(f"MQTT subscribed to {MQTT_TOPIC}")
+    print(f"MQTT subscribed to {MQTT_TELEMETRY_TOPIC}")
 
 
-@fast_mqtt.subscribe(MQTT_TOPIC, qos=0)
+@fast_mqtt.subscribe(MQTT_TELEMETRY_TOPIC, qos=0)
 async def handle_telemetry_message(client, topic, payload, qos, properties):
-    result = await asyncio.to_thread(persist_telemetry, topic, payload)
-
-    if result is not None:
-        await websocket_manager.broadcast_telemetry(
-            result["device"],
-            result["telemetry"],
-        )
+    try:
+        result = await asyncio.to_thread(persist_telemetry, topic, payload)
+        if result is not None:
+            await websocket_manager.broadcast_telemetry(
+                result["device"],
+                result["telemetry"],
+            )
+    except Exception as error:
+        print(f"Failed to process MQTT telemetry: {error}")
 
 
 async def start_mqtt_subscriber():
@@ -167,10 +157,10 @@ async def start_mqtt_subscriber():
         return
 
     try:
-        await run_mqtt_startup()
+        await _start_mqtt()
     except Exception as error:
         print(f"MQTT startup failed: {error}")
-        mqtt_retry_task = asyncio.create_task(retry_mqtt_startup())
+        mqtt_retry_task = asyncio.create_task(_retry_mqtt_startup())
 
 
 async def stop_mqtt_subscriber():
@@ -193,20 +183,20 @@ async def stop_mqtt_subscriber():
         print(f"MQTT shutdown failed: {error}")
 
 
-async def run_mqtt_startup():
+async def _start_mqtt():
     global mqtt_started
 
     await fast_mqtt.mqtt_startup()
     mqtt_started = True
 
 
-async def retry_mqtt_startup():
+async def _retry_mqtt_startup():
     global mqtt_retry_task
 
     while not mqtt_started:
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
         try:
-            await run_mqtt_startup()
+            await _start_mqtt()
         except Exception as error:
             print(f"MQTT startup retry failed: {error}")
 

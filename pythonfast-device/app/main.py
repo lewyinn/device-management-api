@@ -1,51 +1,61 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.openapi.utils import get_openapi
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.cassandra import connect_cassandra, shutdown_cassandra
-from app.core.database import check_sql_database, close_sql_database, sync_sql_database
-from app.core.mqtt import start_mqtt_subscriber, stop_mqtt_subscriber
-from app.core.websocket import websocket_manager
-from app.routers import devices_router, device_telemetry_router
-
-
-API_PREFIX = "/api/v1"
-SERVER_URL = "http://localhost:8000/api/v1"
+from app.api.swagger import API_PREFIX, configure_swagger
+from app.api.v1.router import api_router
+from app.core.database_cassandra import cassandra_database
+from app.core.database_pg import (
+    check_postgres_connection,
+    close_postgres_connection,
+    create_postgres_tables,
+)
+from app.mqtt.mqtt import start_mqtt_subscriber, stop_mqtt_subscriber
+from app.services.telemetry_service import telemetry_service
+from app.websocket.websocket import (
+    router as websocket_router,
+    websocket_manager,
+)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def application_lifespan(app: FastAPI):
     try:
-        check_sql_database()
-        sync_sql_database()
-        connect_cassandra()
+        check_postgres_connection()
+        create_postgres_tables()
+        cassandra_database.connect()
+        telemetry_service.prepare_queries()
         await start_mqtt_subscriber()
         yield
     finally:
         await stop_mqtt_subscriber()
         await websocket_manager.shutdown()
-        shutdown_cassandra()
-        close_sql_database()
+        cassandra_database.shutdown()
+        close_postgres_connection()
 
 
 app = FastAPI(
     title="Device Management API",
-    description=f"API untuk mengelola perangkat IoT.",
+    description="API untuk mengelola perangkat IoT dan telemetry.",
     version="1.0.0",
     docs_url="/api-docs",
-    lifespan=lifespan,
+    redoc_url=None,
+    lifespan=application_lifespan,
 )
 
-app.include_router(devices_router)
-app.include_router(device_telemetry_router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket_manager.handle_connection(websocket)
+app.include_router(api_router, prefix=API_PREFIX)
+app.include_router(websocket_router)
 
 
 @app.exception_handler(HTTPException)
@@ -58,55 +68,43 @@ async def handle_http_error(request: Request, error: HTTPException):
 
 
 @app.exception_handler(RequestValidationError)
-async def handle_validation_error(request: Request, error: RequestValidationError):
+async def handle_validation_error(
+    request: Request,
+    error: RequestValidationError,
+):
     message = "Invalid request payload"
 
     if error.errors():
         field = error.errors()[0]["loc"][-1]
+
         if field == "device_id":
             message = "Device ID must be a valid UUID"
-        elif field in ["page", "limit"]:
+        elif field in {"page", "limit"}:
             message = "Query parameter 'page' or 'limit' must be a valid number"
-        elif field in ["start_month", "end_month"]:
-            message = "Query parameter 'start_month' and 'end_month' must use YYYY-MM format"
-        elif field in ["name", "type", "status"]:
+        elif field in {"start_month", "end_month"}:
+            message = (
+                "Query parameter 'start_month' and 'end_month' "
+                "must use YYYY-MM format"
+            )
+        elif field in {"name", "type", "status"}:
             message = f"Attribute '{field}' is required"
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": "Validation failed", "details": message},
+        content={
+            "error": "Validation failed",
+            "details": message,
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def handle_internal_error(request: Request, error: Exception):
+    print(f"Unhandled application error: {error}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"error": "Internal server error"},
     )
 
 
-def custom_openapi():
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    schema["servers"] = [{"url": SERVER_URL}]
-
-    paths = {}
-    for path, methods in schema["paths"].items():
-        clean_path = path.removeprefix(API_PREFIX)
-        paths[clean_path or path] = methods
-
-    schema["paths"] = paths
-
-    for path in schema["paths"].values():
-        for method in path.values():
-            method["responses"].pop("422", None)
-
-    return schema
-
-
-app.openapi = custom_openapi
+configure_swagger(app)

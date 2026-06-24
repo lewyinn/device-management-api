@@ -2,14 +2,12 @@ from uuid import uuid4
 
 from sqlalchemy import Column, Index, String
 
-from app.core.database import Base
+from app.core.database_pg import Base
 
 
 class Device(Base):
     __tablename__ = "devices"
-    __table_args__ = (
-        Index("idx_device_name", "name"),
-    )
+    __table_args__ = (Index("idx_device_name", "name"),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     name = Column(String, nullable=False)
